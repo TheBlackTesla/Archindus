@@ -56,9 +56,9 @@ test("offline commands return with no engine; commands and inputs stay out of la
  const history=[{role:"user",content:'/json {"secret":"sentinel"}'},{role:"assistant",content:"JSON shape"},{role:"user",content:"Use teal."},{role:"assistant",content:"Okay."}];const next=JSON.stringify(app.transportHistory(history));assert.doesNotMatch(next,/sentinel|JSON shape/);assert.match(next,/teal/);
 });
 test("private text streams a filtered first response before completion and forwards prior turns",async()=>{
- const saved=globalThis.fetch,old=process.env.ARCHINDUS_QWEN_ENDPOINT,oldMode=process.env.ARCHINDUS_RUNTIME_MODE;process.env.ARCHINDUS_RUNTIME_MODE="independent";process.env.ARCHINDUS_QWEN_ENDPOINT="https://example.invalid/v1/";let up;
+ const saved=globalThis.fetch,old=process.env.ARCHINDUS_QWEN_ENDPOINT;process.env.ARCHINDUS_QWEN_ENDPOINT="https://example.invalid/v1/";let up;
  globalThis.fetch=async(_url,init)=>{const body=JSON.parse(init.body);assert.equal(body.stream,true);assert.match(JSON.stringify(body.messages),/blue/);return new Response(new ReadableStream({start(c){up=c;c.enqueue(app.encodeEvent({choices:[{delta:{content:"<think>internal</think>The answer"}}]}))}}),{headers:{"content-type":"text/event-stream"}})};
  try{const res=await app.privateChat(new Request("https://site.test/api/archindus/chat",{method:"POST",headers:{origin:"https://site.test","content-type":"application/json"},body:JSON.stringify({stream:true,action:"generate",selectedAgentId:"architect",objective:"Which color?",history:[{role:"user",content:"Use blue."},{role:"assistant",content:"OK."}]})}));
  const events=app.readEvents(res.body);assert.equal((await events.next()).value.text,"The answer");up.enqueue(app.encodeEvent({choices:[{delta:{content:" is blue."},finish_reason:"stop"}]}));up.close();let last;for await(const e of events)last=e;assert.equal(last.type,"complete");assert.equal(last.text,"The answer is blue.");
- }finally{globalThis.fetch=saved;if(oldMode===undefined)delete process.env.ARCHINDUS_RUNTIME_MODE;else process.env.ARCHINDUS_RUNTIME_MODE=oldMode;if(old===undefined)delete process.env.ARCHINDUS_QWEN_ENDPOINT;else process.env.ARCHINDUS_QWEN_ENDPOINT=old}
+ }finally{globalThis.fetch=saved;if(old===undefined)delete process.env.ARCHINDUS_QWEN_ENDPOINT;else process.env.ARCHINDUS_QWEN_ENDPOINT=old}
 });

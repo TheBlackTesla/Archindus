@@ -11,7 +11,7 @@ function qwenHeaders() {
   return apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
 }
 
-async function independentGET() {
+export async function GET() {
   const environment = hostedEnvironment();
   const hostedConfigured = Boolean(environment.enabled && environment.key && environment.db);
   let hostedAvailable = false;
@@ -49,9 +49,3 @@ async function independentGET() {
 }
 import { hostedEnvironment } from "../../../../lib/inference/environment";
 import { budgetAvailable } from "../../../../lib/inference/budget";
-
-import { relayRuntime } from "../../../../lib/inference/shared-runtime";
-
-export async function GET(request: Request) {
- return process.env.ARCHINDUS_RUNTIME_MODE === "independent" ? independentGET() : relayRuntime(request, "status");
-}

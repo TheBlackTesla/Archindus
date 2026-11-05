@@ -36,27 +36,30 @@ Their exact SHA-256 hashes, lengths and owner-operated URLs are committed in
 These are runtime files, not model weights. Licenses and provenance remain
 in `public/media/` and `public/fonts/`.
 
-## Connected inference
+## Independent inference
 
-The default `ARCHINDUS_RUNTIME_MODE=shared` forwards the three fixed Archindus
-API routes to the existing Architect Industries Site. Streaming responses,
-errors and cooldowns pass through. No API key is copied. Browser cookies and
-Authorization headers are never forwarded. Same-origin POSTs, a 150,000-byte
-input limit, fixed destinations, bounded timeouts and rejected redirects keep
-this a narrow service connection. Automatic-mode prompts, relevant file
-excerpts and conversation context use the same disclosure shown in Settings.
+This site retains the original private Qwen and hosted inference handlers.
+Runtime secrets from Architect Industries are not copied. Local file tools,
+route inspection, JSON inspection and explicit optional model setup work
+without server credentials. General chat requires a configured hosted/private
+service or a compatible already-installed browser model.
 
-Both sites share the original service's availability, model configuration,
-cost ledger and spending limits. Relayed traffic may share an upstream
-per-client quota and can be more restrictive than direct traffic. An outage
-or exhausted upstream budget does not become a fabricated successful answer.
+To enable hosted cloud chat, add `OPENAI_API_KEY` as a Secret in the standalone
+Site's Settings → Environment variables, set `ARCHINDUS_HOSTED_ENABLED=true`,
+and redeploy. The `DB` D1 binding and committed migrations provide the original
+durable budget controls. Defaults are capped at $1 per UTC day and $10 per UTC
+month; `ARCHINDUS_DAILY_USD` and `ARCHINDUS_MONTHLY_USD` can lower those ceilings.
+The original Site's usage and this independent Site's usage have separate
+ledgers. Never put API keys in source, browser storage, or chat messages.
 
-For independent inference, configure server-side values from `.env.example`
-and set `ARCHINDUS_RUNTIME_MODE=independent`. Hosted inference needs the `DB`
-D1 binding, committed migrations, server-only `OPENAI_API_KEY`, and
-`ARCHINDUS_HOSTED_ENABLED=true`. Enter secrets in hosting settings, never in
-source or browser storage. Original handlers and budget controls are retained.
-Redeploy after environment changes.
+An optional private OpenAI-compatible runtime uses `ARCHINDUS_QWEN_ENDPOINT`,
+`ARCHINDUS_QWEN_MODEL`, and optionally `ARCHINDUS_QWEN_API_KEY`, as documented
+in `.env.example` and `docs/oracle-interface.md`.
+
+A shared-service connection was tested during extraction but was not reachable
+from the standalone deployment. The final source uses the independent original
+handlers. Cloud chat is not claimed verified until its credentials are configured
+and real multi-turn requests succeed.
 
 ## Browser data
 

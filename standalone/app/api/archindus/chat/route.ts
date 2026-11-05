@@ -13,7 +13,7 @@ const schema = z.object({
   plan: z.object({ primaryId: z.string().max(30), task: z.enum(["chat", "code", "document", "analysis", "image", "video"]) }).optional(),
 });
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
-async function independentPOST(request: Request) {
+export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) return json({ error: "This request must come from Archindus." }, 403);
   const endpoint = process.env.ARCHINDUS_QWEN_ENDPOINT?.trim();
@@ -56,10 +56,4 @@ async function independentPOST(request: Request) {
     if (error) return json({ error }, 502);
     return json({ text, model: process.env.ARCHINDUS_QWEN_MODEL?.trim() || "Private Qwen" });
   } catch { return json({ error: "The private runtime could not complete this request." }, 503); }
-}
-
-import { relayRuntime } from "../../../../lib/inference/shared-runtime";
-
-export async function POST(request: Request) {
- return process.env.ARCHINDUS_RUNTIME_MODE === "independent" ? independentPOST(request) : relayRuntime(request, "chat");
 }
