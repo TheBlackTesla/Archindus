@@ -19,7 +19,7 @@ Use Node 22.13+ on Linux or WSL with Bash, GNU timeout, curl and flock.
 
 ```sh
 npm ci
-node scripts/restore-assets.mjs
+node scripts/verify-assets.mjs
 npm run dev
 ```
 
@@ -29,12 +29,12 @@ npm run build
 node --test tests/*.test.mjs
 ```
 
-The Site source includes all bundled runtime assets. The GitHub source copy
-restores four large runtime/font assets using `scripts/restore-assets.mjs`.
-Their exact SHA-256 hashes, lengths and owner-operated URLs are committed in
-`scripts/runtime-assets.json`. Valid existing files make no network request.
-These are runtime files, not model weights. Licenses and provenance remain
-in `public/media/` and `public/fonts/`.
+The Site and GitHub source include all bundled runtime and font assets.
+`scripts/verify-assets.mjs` checks their SHA-256 hashes and lengths before
+development and production builds, without a network request. The URLs in
+`scripts/runtime-assets.json` record provenance only. These are runtime files,
+not model weights. Licenses and provenance remain in `public/media/` and
+`public/fonts/`.
 
 ## Independent inference
 

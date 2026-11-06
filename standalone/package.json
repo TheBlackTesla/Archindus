@@ -13,8 +13,8 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
-    "prebuild": "node scripts/restore-assets.mjs",
-    "predev": "node scripts/restore-assets.mjs"
+    "prebuild": "node scripts/verify-assets.mjs",
+    "predev": "node scripts/verify-assets.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
