@@ -1,0 +1,1 @@
+ALTER TABLE `account_profiles` ADD `data_version` text DEFAULT '' NOT NULL;

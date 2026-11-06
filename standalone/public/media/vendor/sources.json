@@ -1,0 +1,60 @@
+[
+  {
+    "file": "stable_diffusion.js",
+    "url": "https://websd.mlc.ai/dist/stable_diffusion.js",
+    "bytes": 19192,
+    "sha256": "745d9d3738cce9777a0a47587d7623ae0371c831f773267f42ba4b5415b4ce28",
+    "local_sha256": "e03c3647dbe6912f58dcc888276462e41bf639b80fdbe4ca9e9d8ac7a6612de7",
+    "patch": "Declare the scheduler in method scope; optionally read back final RGBA pixels to avoid a cleared canvas export."
+  },
+  {
+    "file": "tvmjs.bundle.js",
+    "url": "https://websd.mlc.ai/dist/tvmjs.bundle.js",
+    "bytes": 229230,
+    "sha256": "e1011f5396409949916684052f222fe9fec664dcc12581f7b1c42bd1aa101d84",
+    "patch": "Use direct fetch when browser cache is unavailable or full; preserve successful uncached downloads.",
+    "local_sha256": "ac975bc08541455510c2d9b677d51dc88e590819c6c4ba410147e24190a18a5a"
+  },
+  {
+    "file": "tvmjs_runtime.wasi.js",
+    "url": "https://websd.mlc.ai/dist/tvmjs_runtime.wasi.js",
+    "bytes": 86438,
+    "sha256": "6d8b0462d1cc321366da177cd66270a0096f300c51d5665ec33b28892eac869b"
+  },
+  {
+    "file": "stable_diffusion_webgpu.wasm",
+    "url": "https://websd.mlc.ai/dist/stable_diffusion_webgpu.wasm",
+    "bytes": 8921143,
+    "sha256": "96701349271283b892162ca05f6c9d6344f2d9b1097c7ec123f081a694200730"
+  },
+  {
+    "file": "scheduler_dpm_solver_multistep_consts.json",
+    "url": "https://websd.mlc.ai/dist/scheduler_dpm_solver_multistep_consts.json",
+    "bytes": 2244,
+    "sha256": "14e38e8ea600b32955f564f0ddd45f63b926fbdb52b6c74a231a0ba2b87ca98b"
+  },
+  {
+    "file": "scheduler_pndm_consts.json",
+    "url": "https://websd.mlc.ai/dist/scheduler_pndm_consts.json",
+    "bytes": 3498,
+    "sha256": "07f45d25a71b33f6995d04520ed0f46284bde8cee52d18faf4636edda50dc21a"
+  },
+  {
+    "file": "tokenizers-wasm/tokenizers_wasm.js",
+    "url": "https://websd.mlc.ai/dist/tokenizers-wasm/tokenizers_wasm.js",
+    "bytes": 12338,
+    "sha256": "990884e498f85ee0d5b1048bbad3c24e9fca783f44cd4bf6c53a132fcd357ada"
+  },
+  {
+    "file": "tokenizers-wasm/tokenizers_wasm_bg.wasm",
+    "url": "https://websd.mlc.ai/dist/tokenizers-wasm/tokenizers_wasm_bg.wasm",
+    "bytes": 1524065,
+    "sha256": "3276c4e687b345041671482187a198318cd65091202472880c723ab342a094b6"
+  },
+  {
+    "file": "tokenizer.json",
+    "url": "https://huggingface.co/openai/clip-vit-large-patch14/resolve/main/tokenizer.json",
+    "bytes": 2224003,
+    "sha256": "a83e0809aa4c3af7208b2df632a7a69668c6d48775b3c3fe4e1b1199d1f8b8f4"
+  }
+]
