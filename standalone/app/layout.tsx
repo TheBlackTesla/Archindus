@@ -4,7 +4,7 @@ const siteUrl = new URL("https://archindus.stevenscadet.chatgpt.site");
 export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: { default: "Archindus | Architect Industries", template: "%s | Archindus" },
-  description: "The Archindus Oracle workspace by Architect Industries. Describe what you want to accomplish, continue the conversation, and review your results.",
+  description: "The Archindus workspace by Architect Industries. Describe what you want to accomplish, continue the conversation, and review your results.",
   alternates: { canonical: "/" },
   openGraph: { type: "website", url: "/", siteName: "Archindus", title: "Archindus | Architect Industries", description: "One conversational workspace, built around your objective." },
   twitter: { card: "summary", title: "Archindus | Architect Industries", description: "One conversational workspace, built around your objective." },

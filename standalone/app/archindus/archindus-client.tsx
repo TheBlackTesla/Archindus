@@ -468,7 +468,7 @@ export default function ArchindusClient() {
 
     <div className="oracle-stage">
       <div className="oracle-neural" aria-label={`Archindus is ${oracleState === "idle" ? "ready" : oracleState}`} role="img"><NeuralNetwork state={oracleState} activity={neuralActivity} /></div>
-      {!activeMessage && !galleryOpen ? <div className="oracle-presence"><span>ARCHITECT INDUSTRIES / ORACLE</span><h1>What do you want to accomplish?</h1></div> : null}
+      {!activeMessage && !galleryOpen ? <div className="oracle-presence"><span>ARCHITECT INDUSTRIES / ARCHINDUS</span><h1>What do you want to accomplish?</h1></div> : null}
     </div>
 
     {activeMessage || galleryOpen ? <div className={`oracle-result ${galleryOpen || activeMessage?.media?.length ? "oracle-result-media" : ""}`} ref={responseRef}>
