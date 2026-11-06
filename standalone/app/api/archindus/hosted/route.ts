@@ -1,6 +1,8 @@
 import { hostedEnvironment } from "../../../../lib/inference/environment";
 import { handleHosted } from "../../../../lib/inference/hosted";
+import {accountIdentity,accountPersonalization,type AccountDb} from '../../../../lib/account';
 
 export async function POST(request: Request) {
-  return handleHosted(request, hostedEnvironment());
+  const environment=hostedEnvironment();
+  return handleHosted(request,{...environment,personalize:temporary=>accountPersonalization(environment.db as AccountDb|undefined,accountIdentity(request),temporary)});
 }

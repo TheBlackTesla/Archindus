@@ -1,5 +1,5 @@
 import { workbench } from "./workbench";
-import { withoutToolTurns, cleanHistory, finalAnswer, validateAnswer, type ContextMessage } from "./answer";
+import { withoutToolTurns, cleanHistory, finalAnswer, formatAnswer, validateAnswer, type ContextMessage } from "./answer";
 import { attachmentContext, summarizeCsv, type Attachment } from "./artifacts";
 import { fallbackPlan, quickReply, type TaskPlan } from "./orchestration";
 import type { AgentId } from "./agents";
@@ -78,7 +78,7 @@ export async function executeObjective(input: string, selected: AgentId, history
     check(); ports.status(mode === "cpu" ? "Preparing the answer in compatibility mode" : "Preparing the answer", plan);
     try {
       const result = await ports.infer(mode, "generate", plan, objective, generationHistory); check();
-      const text = finalAnswer(result.text ?? "");
+      const text = formatAnswer(result.text ?? "",plan.task);
       const invalid = validateAnswer(text, plan.task);
       if (invalid) throw new Error(invalid);
       return { text, plan, model: result.model ?? mode };

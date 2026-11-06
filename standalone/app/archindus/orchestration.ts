@@ -67,7 +67,7 @@ export function fallbackPlan(input: string, selected: AgentId, history: ContextM
 export function quickReply(input: string, selected: AgentId, history: ContextMessage[]) {
   if (/^(hi|hello|hey|thanks|thank you)[!.?\s]*$/i.test(input.trim())) {
     const agentId = selected;
-    return { agentId, text: /thank/i.test(input) ? "You're welcome. What would you like to work on next?" : `Hi! I'm ${getAgent(agentId).name}. What would you like to create or work on?` };
+    return { agentId, text: /thank/i.test(input) ? "You're welcome. What would you like to work on next?" : "Hi! I'm Archindus. What would you like to create or work on?" };
   }
   if (/\b(which agent|what agent|who can|what can you do)\b/i.test(input)) {
     const preceding = [...history].reverse().find(m => m.role === "user")?.content ?? "";

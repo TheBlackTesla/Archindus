@@ -8,6 +8,7 @@ import { readEvents } from "./stream";
 
 export class HostedRefusal extends Error { name = "HostedRefusal"; }
 export class HostedRuntime {
+  temporary = false;
   private unavailableUntil = 0;
   constructor(private transport: typeof fetch = fetch.bind(globalThis), private now: () => number = Date.now) {}
   async request(action: "plan" | "generate" | "image", selected: AgentId, objective: string, history: ContextMessage[], signal: AbortSignal, plan?: TaskPlan, onPartial?: (text: string) => void) {
@@ -15,11 +16,11 @@ export class HostedRuntime {
     if (this.now() < this.unavailableUntil) throw new Error("Hosted inference is temporarily unavailable.");
     let retryAfter = 60;
     try {
-      const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(action === "image" ? 120_000 : 40_000)]);
+      const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
       const response = await this.transport("/api/archindus/hosted", {
         method: "POST", headers: { "Content-Type": "application/json" },
         signal: requestSignal,
-        body: JSON.stringify({ requestId: requestId(), action, stream: action === "generate", selectedAgentId: selected, objective, history: transportHistory(history), ...(plan ? { plan: { primaryId: plan.primaryId, task: plan.task } } : {}) }),
+        body: JSON.stringify({ requestId: requestId(), action, stream: action === "generate", temporary:this.temporary, selectedAgentId: selected, objective, history: transportHistory(history), ...(plan ? { plan: { primaryId: plan.primaryId, task: plan.task } } : {}) }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));

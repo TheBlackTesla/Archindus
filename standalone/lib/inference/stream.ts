@@ -1,9 +1,11 @@
 import { AnswerStream, encodeEvent, readEvents } from "../../app/archindus/stream";
-import { validateAnswer } from "../../app/archindus/answer";
+import { validateAnswer,formatAnswer } from "../../app/archindus/answer";
+import { textUsageCost } from './models';
 
 export function streamedCompletion(response: Response, options: {
   signal: AbortSignal; cancel: () => void; task: string; model: string;
   settle: (actual?: number) => Promise<void>;
+  rates?: {input:number;output:number;cached?:number};
 }) {
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
@@ -18,7 +20,7 @@ export function streamedCompletion(response: Response, options: {
         for await (const data of readEvents(response.body, options.signal)) {
           if (data.error) throw new Error("Upstream stream failed");
           if (data.usage && Number.isSafeInteger(data.usage.prompt_tokens) && data.usage.prompt_tokens > 0 && Number.isSafeInteger(data.usage.completion_tokens) && data.usage.completion_tokens >= 0) {
-            actual = Math.ceil(data.usage.prompt_tokens * 0.4 + data.usage.completion_tokens * 1.6);
+            actual = options.rates ? textUsageCost(data.usage,options.rates) : Math.ceil(data.usage.prompt_tokens * 0.4 + data.usage.completion_tokens * 1.6);
           }
           const choice = data.choices?.[0];
           if (choice?.delta?.refusal || choice?.finish_reason === "content_filter") {
@@ -33,7 +35,7 @@ export function streamedCompletion(response: Response, options: {
           }
         }
         options.signal.throwIfAborted();
-        const text = answer.finish();
+        const text = finish==='stop'?formatAnswer(answer.finish(),options.task):answer.finish();
         if (finish !== "stop" || validateAnswer(text, options.task)) throw new Error("Incomplete answer");
         completed = { type: "complete", text, model: options.model };
       } catch (error) {

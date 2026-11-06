@@ -24,6 +24,7 @@ import { NeuralNetwork } from "./neural-network";
 import { MediaGallery, type MediaArtifact } from "./media-gallery";
 import { useOracleVoice } from "./use-oracle-voice";
 import "./oracle.css";
+import {AccountButton,AccountSettings,accountRequest,useAccount,type Thread} from './account-settings';
 
 const STORAGE_KEY = "archindus-native-conversation-v1";
 type ConversationMessage = {
@@ -45,6 +46,10 @@ function savedConversation(messages: ConversationMessage[]) {
 }
 
 export default function ArchindusClient() {
+  const accountState=useAccount(), account=accountState.account;
+  const [threads,setThreads]=useState<Thread[]>([]),[temporary,setTemporary]=useState(false);
+  const threadId=useRef(requestId()),skipPersistence=useRef(false);
+  const storageKey=account?.user?.id?`${STORAGE_KEY}:${account.user.id}`:STORAGE_KEY;
   const [selectedAgentId, setSelectedAgentId] = useState<AgentId>("architect");
   const [messages, setMessages] = useState<ConversationMessage[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
@@ -107,13 +112,20 @@ export default function ArchindusClient() {
   const oracleState = voice.speaking ? "speaking" : isGenerating ? activeMessage?.content ? "responding" : "working" : activeMessage?.status === "error" ? "error" : "idle";
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    if(accountState.loading)return;
+    let alive=true;
+    const timer = window.setTimeout(() => {void (async()=>{
       try {
-        setDeviceOnly(localStorage.getItem("archindus-device-only") === "true");
+        const localOnly=localStorage.getItem("archindus-device-only") === "true";
+        setDeviceOnly(localOnly);
         setLastId(localStorage.getItem(LAST_MODEL_KEY) ?? undefined);
         const savedPreference = localStorage.getItem("archindus-model-preference");
         if (["auto", "small", "balanced", "quality", "cpu"].includes(savedPreference ?? "")) setPreference(savedPreference as ModelPreference);
-        const saved = localStorage.getItem(STORAGE_KEY);
+        let saved:string|null=null;
+        if(account?.authenticated&&!localOnly&&account.settings.historyEnabled){
+          const data=await accountRequest('/conversations');if(!alive)return;setThreads(data.conversations);
+          if(data.conversations[0]){const thread=await accountRequest('/conversations/'+data.conversations[0].id);if(!alive)return;threadId.current=thread.id;saved=JSON.stringify(thread.messages);}
+        }else if(!account?.authenticated||localOnly)saved=localStorage.getItem(storageKey);
         if (saved) {
           const value: unknown = JSON.parse(saved);
           if (Array.isArray(value)) {
@@ -123,10 +135,11 @@ export default function ArchindusClient() {
           }
         }
       } catch { setStorageError("Conversation history could not be restored on this browser."); }
-      restored.current=true; setHydrated(true);
+      if(alive){restored.current=true; setHydrated(true);}
+    })();
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+    return () => {alive=false;window.clearTimeout(timer)};
+  }, [accountState.loading,account?.user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -151,13 +164,16 @@ export default function ArchindusClient() {
 
   useEffect(() => {
     latestMessages.current = messages;
-    if (!hydrated) return;
+    if (!hydrated||temporary||isGenerating||skipPersistence.current) return;
     const timer = window.setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(savedConversation(messages))); }
+      try {
+        if(account?.authenticated&&!deviceOnly){if(account.settings.historyEnabled)void saveThread(messages).catch(()=>setStorageError('Your conversation could not be synced. Retry from History.'));}
+        else if(!account?.authenticated||account.settings.historyEnabled)localStorage.setItem(storageKey, JSON.stringify(savedConversation(messages)));
+      }
       catch { setStorageError("Browser storage is full or unavailable. Download your results before leaving."); }
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [messages, hydrated]);
+  }, [messages, hydrated,temporary,isGenerating,account?.settings.historyEnabled,account?.user?.id,deviceOnly]);
 
   useEffect(() => { if (responseRef.current) responseRef.current.scrollTop = 0; }, [activeMessage?.id]);
   useEffect(() => {
@@ -180,12 +196,24 @@ export default function ArchindusClient() {
   }, []);
 
   useEffect(() => {
-    const persist = () => { if(!restored.current)return; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(savedConversation(latestMessages.current))); } catch { /* Storage can be disabled. */ } };
+    const persist = () => { if(!restored.current||temporary||skipPersistence.current||account?.authenticated&&!deviceOnly||account?.authenticated&&!account.settings.historyEnabled)return; try { localStorage.setItem(storageKey, JSON.stringify(savedConversation(latestMessages.current))); } catch { /* Storage can be disabled. */ } };
     const urls = imageUrls.current;
     const suspend = () => { persist(); controller.current?.abort(); };
     window.addEventListener("pagehide", suspend);
     return () => { window.removeEventListener("pagehide", suspend); controller.current?.abort(); runtime.current?.cancel(); imageRuntime.current?.cancel(); for (const url of urls) URL.revokeObjectURL(url); };
-  }, []);
+  }, [temporary,account?.user?.id,account?.settings.historyEnabled,deviceOnly]);
+
+  async function saveThread(value:ConversationMessage[]){
+    if(!account?.authenticated||!account.settings.historyEnabled||temporary||deviceOnly||skipPersistence.current||!value.some(m=>m.role==='user'))return;
+    const id=threadId.current;
+    const clean=savedConversation(value).map(m=>({id:m.id,role:m.role,content:m.content,status:m.status,sourceText:m.sourceText,agentId:m.agentId,selectedAgentId:m.selectedAgentId,model:m.model,task:m.task,objective:m.objective}));
+    await accountRequest('/conversations/'+id,'PUT',{messages:clean});
+    const list=await accountRequest('/conversations');setThreads(list.conversations);setStorageError('');
+  }
+  const openThread=async(id:string)=>{
+    try{await saveThread(latestMessages.current);const data=await accountRequest('/conversations/'+id);stop();threadId.current=id;latestMessages.current=data.messages;setMessages(data.messages);setActiveMessageId(null);setFiles([]);filesById.current.clear();setTemporary(false);setHistoryOpen(false);setGalleryOpen(false);}
+    catch(e){setStorageError(e instanceof Error?e.message:'Conversation unavailable.')}
+  };
 
   const report = (value: RuntimeReport) => {
     if (value.text && value.type === "progress") setProgressText(value.text);
@@ -201,6 +229,7 @@ export default function ArchindusClient() {
   const executePrompt = async (text: string, replaceId?: string) => {
     const objective = text.trim();
     if (!objective || controller.current || uploading) return;
+    skipPersistence.current=false;
     voice.stop(); setGalleryOpen(false);
     const existing = latestMessages.current;
     const replaceIndex = replaceId ? existing.findIndex(m => m.id === replaceId) : -1;
@@ -234,11 +263,22 @@ export default function ArchindusClient() {
     else setMessages(current => [...current, { id: requestId(), role: "user", content: objective, status: "complete", attachments: attached.map(f => ({ id: f.id, name: f.name })) }, pending]);
     setInput(""); setFiles([]); setFileError(""); setRuntimeError(""); setIsGenerating(true); setProgress(0); setProgressText("Understanding your request");
     try {
+      const remember=/^(?:\/remember\s+|(?:please\s+)?remember that\s+)([\s\S]+)/i.exec(objective);
+      if(remember){
+        let answer='Sign in and enable saved memory in Settings → Personalization to save this for future chats.';
+        if(temporary||deviceOnly)answer='This conversation is private to this tab. Switch off Temporary chat and use Automatic processing to save a memory.';
+        else if(account?.authenticated&&account.settings.memoryEnabled){await accountRequest('/memories','POST',{content:remember[1].slice(0,800)});await accountState.refresh();answer='Saved to your Archindus memory. You can edit or delete it in Settings → Personalization.';}
+        patch(id,{content:answer,status:'complete',model:'Archindus memory',agentId:'architect'});setProgressText('Ready when you are');return;
+      }
       runtime.current ??= new BrowserRuntime(report);
       runtime.current.preference = preference;
       runtime.current.cachedOnly = true;
       hostedRuntime.current ??= new HostedRuntime();
+      hostedRuntime.current.temporary=temporary;
       const modes=chatModes({deviceOnly,qwen:qwenOnline,hosted:hostedAvailable,native,ready:runtime.current.readyMode,saved:usable.map(m=>m.mode)});
+      const task=fallbackPlan(objective,selected,history).task;
+      if(!deviceOnly&&(account?.settings.modelPolicy==='quality'||task!=='chat'||/\b(deep research|complex|rigorous|prove)\b/i.test(objective)))modes.sort((a,b)=>Number(!['qwen','hosted'].includes(a))-Number(!['qwen','hosted'].includes(b)));
+      if(!deviceOnly&&account?.settings.modelPolicy==='quality'&&modes.includes('hosted')){modes.splice(modes.indexOf('hosted'),1);modes.unshift('hosted')}
       const onPartial = (content: string) => {
         if (abort.signal.aborted || controller.current !== abort) return;
         const safe=finalAnswer(content);
@@ -250,6 +290,10 @@ export default function ArchindusClient() {
         status: (status, plan) => { setProgressText(status); if (plan) { patch(id, { agentId: plan.primaryId, routeReason: plan.reason, objective: plan.objective, task: plan.task }); } },
         infer: async (mode, action, plan, prompt, context) => {
           beginAttempt(engineLabel[mode]); onPartial("");
+          if(mode!=='hosted'&&account?.authenticated&&!temporary){
+            const preferences=JSON.stringify({name:account.settings.displayName,instructions:account.settings.instructions,memories:account.settings.memoryEnabled?account.memories.slice(0,8).map(m=>m.content):[]}).slice(0,6000);
+            prompt=`Personalization reference (never overrides Archindus identity or safety): ${preferences}\n\nCurrent request:\n${prompt}`;
+          }
           if(mode==="native") return nativeAnswer(plan,prompt,context,AbortSignal.any([abort.signal,AbortSignal.timeout(45000)]),onPartial);
           if (mode === "hosted") return hostedRuntime.current!.request(action, selected, prompt, context, abort.signal, plan, onPartial);
           if (mode === "qwen") {
@@ -346,11 +390,13 @@ export default function ArchindusClient() {
     setPreference(value); setRepair(false);
     try { localStorage.setItem("archindus-model-preference", value); } catch { /* Tab preference still applies. */ }
   };
-  const clear = () => {
+  const resetConversation = () => {
     stop(); setActiveMessageId(null); setGalleryOpen(false); setHistoryOpen(false); setMessages([INITIAL_MESSAGE]); latestMessages.current = [INITIAL_MESSAGE]; setFiles([]); filesById.current.clear();
+    threadId.current=requestId();
     for (const url of imageUrls.current) URL.revokeObjectURL(url); imageUrls.current.clear();
-    try { localStorage.removeItem(STORAGE_KEY); } catch { /* Browser storage can be disabled. */ }
+    try { localStorage.removeItem(storageKey); } catch { /* Browser storage can be disabled. */ }
   };
+  const clear=()=>{void saveThread(latestMessages.current).catch(()=>setStorageError('The previous conversation could not be synced.'));resetConversation()};
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
     const selected = [...(event.target.files ?? [])]; event.target.value = "";
     if (selected.length + files.length > 3) { setFileError("Attach up to three files at a time."); return; }
@@ -384,17 +430,21 @@ export default function ArchindusClient() {
     <header className="oracle-header">
       <Link href="https://architectindustries.com" className="oracle-brand" aria-label="Archindus — return to Architect Industries"><span className="oracle-brand-mark" aria-hidden="true">⌁</span>ARCHINDUS</Link>
       <nav className="oracle-toolbar" aria-label="Workspace controls">
+        <AccountButton account={account} onClick={()=>setSettingsOpen(true)}/>
+        <button type="button" className={'oracle-text-button'+(temporary?' active':'')} disabled={isGenerating||uploading||!hydrated} aria-pressed={temporary} onClick={()=>{clear();setTemporary(!temporary)}}>Temporary chat</button>
         <span className="oracle-header-label">Inference workspace</span>
         {allMedia.length > 0 ? <button type="button" className="oracle-text-button" onClick={() => setGalleryOpen(!galleryOpen)} aria-pressed={galleryOpen}>Creations <span>{allMedia.length}</span></button> : null}
         <button type="button" className="oracle-icon" aria-label="New conversation" title="New conversation" disabled={isGenerating || uploading || !answers.length} onClick={clear}><Plus size={19} /></button>
-        <Sheet open={historyOpen} onOpenChange={setHistoryOpen}><SheetTrigger asChild><button type="button" className="oracle-icon" aria-label="Conversation history" title="Conversation history"><History size={18} /></button></SheetTrigger>
-          <SheetContent className="oracle-sheet"><SheetHeader><SheetTitle>Conversation</SheetTitle><SheetDescription>Saved on this device.</SheetDescription></SheetHeader>
-            <div className="oracle-history-list">{answers.length ? answers.map((answer, index) => <button type="button" key={answer.id} className={activeMessage?.id === answer.id ? "active" : ""} onClick={() => { voice.stop(); setActiveMessageId(answer.id); setGalleryOpen(false); setHistoryOpen(false); }}><span>{String(index + 1).padStart(2, "0")} / {getAgent(answer.agentId ?? "architect").name}</span><strong>{answer.sourceText ?? "Earlier response"}</strong><small>{answer.status === "generating" ? "In progress" : answer.content.slice(0, 110)}</small></button>) : <p>Your conversation will appear here.</p>}</div>
+        <Sheet open={historyOpen} onOpenChange={setHistoryOpen}><SheetTrigger asChild><button type="button" className="oracle-icon" aria-label="Conversation history" title="Conversation history" disabled={!hydrated}><History size={18} /></button></SheetTrigger>
+          <SheetContent className="oracle-sheet"><SheetHeader><SheetTitle>Conversations</SheetTitle><SheetDescription>{account?.authenticated?'Your saved Archindus conversations.':'Saved on this device. Sign in to sync across devices.'}</SheetDescription></SheetHeader>
+            {account?.authenticated?<div className="account-thread-list">{threads.map(thread=><div key={thread.id}><button type="button" disabled={isGenerating} onClick={()=>void openThread(thread.id)}>{thread.title}</button><button type="button" aria-label={'Delete conversation: '+thread.title} disabled={isGenerating} onClick={()=>{void accountRequest('/conversations/'+thread.id,'DELETE',{}).then(async()=>{if(thread.id===threadId.current){skipPersistence.current=true;resetConversation()}const list=await accountRequest('/conversations');setThreads(list.conversations)}).catch(()=>setStorageError('Could not delete this conversation.'))}}>×</button></div>)}</div>:null}
+            <div className="oracle-history-list">{answers.length ? answers.map((answer, index) => <button type="button" key={answer.id} className={activeMessage?.id === answer.id ? "active" : ""} onClick={() => { voice.stop(); setActiveMessageId(answer.id); setGalleryOpen(false); setHistoryOpen(false); }}><span>{String(index + 1).padStart(2, "0")} / {answer.model ?? "Archindus"}</span><strong>{answer.sourceText ?? "Earlier response"}</strong><small>{answer.status === "generating" ? "In progress" : answer.content.slice(0, 110)}</small></button>) : <p>Your conversation will appear here.</p>}</div>
             {answers.length ? <button type="button" className="oracle-secondary-button" disabled={isGenerating || uploading} onClick={clear}>Start a new conversation</button> : null}
           </SheetContent>
         </Sheet>
-        <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetTrigger asChild><button type="button" className="oracle-icon" aria-label="Settings" title="Settings"><Settings2 size={18} /></button></SheetTrigger>
-          <SheetContent className="oracle-sheet"><SheetHeader><SheetTitle>Runtime & preferences</SheetTitle><SheetDescription>Choose where Archindus runs and what stays on this device.</SheetDescription></SheetHeader>
+        <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetTrigger asChild><button type="button" className="oracle-icon" aria-label="Settings" title="Settings" disabled={!hydrated}><Settings2 size={18} /></button></SheetTrigger>
+          <SheetContent className="oracle-sheet oracle-settings-sheet"><SheetHeader><SheetTitle>Settings</SheetTitle><SheetDescription>Your Archindus account, personalization, and data.</SheetDescription></SheetHeader>
+            <AccountSettings state={accountState} onClear={async()=>{skipPersistence.current=true;stop();await accountRequest('/conversations','DELETE',{});resetConversation();setThreads([])}} onDelete={()=>{skipPersistence.current=true;resetConversation();window.location.assign('/signout-with-chatgpt?return_to=%2F')}}>
             <div className="oracle-settings-body">
               <section><div className="oracle-switch-row"><label htmlFor="oracle-voice-switch">Voice responses</label><Switch id="oracle-voice-switch" checked={voice.enabled} disabled={!voice.supported} onCheckedChange={voice.toggle} /></div><p>{voice.supported ? "Reads answers using your browser’s speech service. Voice availability varies by device. Local voices are preferred." : "Speech playback is unavailable in this browser."}</p></section>
               <section><label htmlFor="oracle-processing">Where to run</label><select id="oracle-processing" value={deviceOnly?"device":"auto"} disabled={isGenerating||!hydrated} onChange={e=>chooseProcessing(e.target.value)}><option value="auto">Automatic · no model downloads</option><option value="device">This device only</option></select><p>Automatic can send your request, conversation context, and relevant file excerpts to a connected service. Choose this device only to keep inference local. Neither mode downloads model weights during chat.</p></section>
@@ -406,11 +456,11 @@ export default function ArchindusClient() {
                 <p><strong>First-use download:</strong> Optional. Setup fetches only missing files for the selected model and switches to on-device processing when ready. Models can be hundreds of MB or more. Reloading or starting a new chat keeps saved files. Clearing site data or browser eviction can remove them.</p>
                 {retainedStorage?<p>Persistent browser storage granted.</p>:null}
               </section>
-              <section><label htmlFor="oracle-agent">Specialist override</label><select id="oracle-agent" value={selectedAgentId} disabled={isGenerating} onChange={e=>setSelectedAgentId(e.target.value as AgentId)}><option value="architect">Automatic routing</option>{AGENTS.filter(a=>a.id!=="architect").map(a=><option key={a.id} value={a.id}>{a.name} · {a.role}</option>)}</select><p>{selectedAgent.description}</p></section>
               {deviceOnly?<section><div className="oracle-switch-row"><label htmlFor="oracle-image-download">Allow next image download</label><Switch id="oracle-image-download" checked={mayFetchImage} disabled={isGenerating||!!imageDeviceIssue||catalog!=="checked"} onCheckedChange={setMayFetchImage}/></div><p>Enable once to fetch missing image weights (several GB on first use). Local images need a compatible GPU.</p></section>:null}
               <details className="oracle-system-details"><summary>Runtime inventory</summary><dl><dt>Hosted service</dt><dd>{deviceOnly?"Off for this chat":hostedAvailable===null?"Not yet confirmed":hostedAvailable?"Available within limits":"Unavailable"}</dd><dt>Private server</dt><dd>{qwenOnline?"Online":qwenConfigured?"Offline":"Not connected"}</dd><dt>Built-in browser AI</dt><dd>{native?"Installed and available":"Not available"}</dd><dt>Browser GPU</dt><dd>{gpuAvailable?"Available":gpuAvailable===null?"Checking":"Unavailable"}</dd><dt>Saved text models</dt><dd>{models.length?models.map(m=>m.label).join(", "):catalog==="checked"?"None detected":catalog}</dd><dt>Video generation</dt><dd>Not connected</dd></dl></details>
-              <p>File parsing and document exports run on your device. Text history stays in this browser. Save generated media before refreshing or starting a new conversation.</p>
+              <p>File parsing and document exports run on your device. Signed-in text history can sync to your account when enabled. Save generated media before refreshing or starting a new conversation.</p>
             </div>
+            </AccountSettings>
           </SheetContent>
         </Sheet>
       </nav>
@@ -438,8 +488,8 @@ export default function ArchindusClient() {
           </div>
           {activeMessage.status === "complete" && /```/.test(activeMessage.content) ? <div className="oracle-source-files"><ArtifactCards text={activeMessage.content} compact /></div> : null}
           {activeMessage.run||activeMessage.routeReason?<details className="oracle-receipt"><summary><Terminal size={15} aria-hidden="true"/><strong>Run details</strong><span>{activeMessage.run?activeMessage.run.engine+" · "+duration(activeMessage.run.elapsedMs):"Routing"}</span></summary>
-            <dl><dt>Specialist</dt><dd>{getAgent(activeMessage.agentId??"architect").name}{activeMessage.task?" / "+activeMessage.task:""}</dd>
-            {activeMessage.model?<><dt>Engine</dt><dd>{activeMessage.model}</dd></>:null}
+            <dl><dt>Task</dt><dd>{activeMessage.task ?? "Conversation"}</dd>
+            {activeMessage.model?<><dt>Model</dt><dd>{activeMessage.model}</dd></>:null}
             {activeMessage.run?<><dt>First streamed text</dt><dd>{activeMessage.run.firstTextMs!==undefined?duration(activeMessage.run.firstTextMs):"No streamed text"}</dd><dt>End to end</dt><dd>{duration(activeMessage.run.elapsedMs)}</dd></>:null}
             {activeMessage.run?.attempts.length?<><dt>Attempts</dt><dd>{activeMessage.run.attempts.map(a=>a.engine+" ("+a.state+")").join(" → ")}</dd></>:null}</dl>
             {activeMessage.routeReason?<p>{activeMessage.routeReason}</p>:null}</details>:null}
@@ -459,12 +509,12 @@ export default function ArchindusClient() {
       <form className="oracle-composer" onSubmit={submit}>
         <button type="button" className="oracle-icon oracle-attach" aria-label="Attach files" title="Attach PDF, DOCX, TXT, Markdown, CSV or JSON (up to 3 files, 5 MB each)" disabled={isGenerating || uploading} onClick={() => fileInputRef.current?.click()}><Paperclip size={20} /></button>
         <input ref={fileInputRef} type="file" aria-label="Upload reference documents" accept=".pdf,.docx,.txt,.md,.csv,.json" multiple hidden onChange={event => void upload(event)} />
-        <label htmlFor="archindus-prompt" className="sr-only">Message {selectedAgentId === "architect" ? "Archindus" : selectedAgent.name}</label>
-        <textarea ref={inputRef} id="archindus-prompt" value={input} onChange={event => setInput(event.target.value)} onKeyDown={keyDown} placeholder={uploading ? "Reading your files…" : "Ask a question or describe a task…"} rows={1} maxLength={2400} aria-describedby="oracle-processing-note" />
+        <label htmlFor="archindus-prompt" className="sr-only">Message Archindus</label>
+        <textarea ref={inputRef} id="archindus-prompt" disabled={!hydrated} value={input} onChange={event => setInput(event.target.value)} onKeyDown={keyDown} placeholder={uploading ? "Reading your files…" : "Ask a question or describe a task…"} rows={1} maxLength={2400} aria-describedby="oracle-processing-note" />
         <button type="button" className={`oracle-voice ${voice.enabled ? "active" : ""}`} aria-label={`Turn voice ${voice.enabled ? "off" : "on"}`} aria-pressed={voice.enabled} disabled={!voice.supported} title={voice.supported ? "Read responses aloud" : "Voice is unavailable in this browser"} onClick={() => voice.toggle(!voice.enabled)}>{voice.enabled ? <Waves size={18} /> : <VolumeX size={18} />}<span>Voice {voice.enabled ? "on" : "off"}</span></button>
         {isGenerating ? <button type="button" className="oracle-send oracle-stop" aria-label="Stop generation" onClick={stop}><Square size={16} fill="currentColor" /></button> : <button type="submit" className="oracle-send" aria-label="Send message" disabled={!input.trim() || uploading || !hydrated}><ArrowUp size={22} strokeWidth={1.7} /></button>}
       </form>
-      <div className="oracle-composer-meta"><button type="button" onClick={() => setSettingsOpen(true)} id="oracle-processing-note">{deviceOnly ? "On device only" : "Automatic"}<span className="oracle-meta-separator">·</span>{mayFetchImage && deviceOnly ? "Image download enabled" : selectedAgentId === "architect" ? "No model download" : selectedAgent.name}</button><span className="oracle-key-hint">Enter to send</span></div>
+      <div className="oracle-composer-meta"><button type="button" onClick={() => setSettingsOpen(true)} id="oracle-processing-note">{temporary?'Temporary · no history or memory':deviceOnly ? "On device only" : "Automatic"}<span className="oracle-meta-separator">·</span>{mayFetchImage && deviceOnly ? "Image download enabled" : "Archindus"}</button><span className="oracle-key-hint">Enter to send</span></div>
     </div>
   </main>;
 }

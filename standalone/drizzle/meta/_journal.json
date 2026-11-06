@@ -15,6 +15,20 @@
       "when": 1788907573238,
       "tag": "0001_cuddly_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793952443853,
+      "tag": "0002_unique_newton_destine",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793954502745,
+      "tag": "0003_optimal_avengers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { streamedCompletion } from "../../../../lib/inference/stream";
 import { z } from "zod";
 import { AGENTS, getAgentPrompt, type AgentId } from "../../../archindus/agents";
-import { finalAnswer, modelContext, validateAnswer } from "../../../archindus/answer";
+import { finalAnswer, formatAnswer, modelContext, validateAnswer } from "../../../archindus/answer";
 import { fallbackPlan, parsePlan, PLANNER_PROMPT, PLAN_SCHEMA, taskInstructions } from "../../../archindus/orchestration";
 
 const schema = z.object({
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     const output = await result.json() as { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
     const choice = output.choices?.[0];
     if (input.action === "plan") return json({ plan: parsePlan(choice?.message?.content ?? "", plan), model: "Private Qwen" });
-    const text = finalAnswer(choice?.message?.content ?? "");
+    const text = formatAnswer(choice?.message?.content ?? "",plan.task);
     const error = choice?.finish_reason === "length" ? "The private model reached its answer limit." : validateAnswer(text, plan.task);
     if (error) return json({ error }, 502);
     return json({ text, model: process.env.ARCHINDUS_QWEN_MODEL?.trim() || "Private Qwen" });

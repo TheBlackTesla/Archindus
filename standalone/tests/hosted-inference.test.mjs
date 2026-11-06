@@ -117,8 +117,9 @@ test("hosted code is filtered, downloadable, parameter-bounded and charged by re
   assert.equal(response.status, 200); const result = await response.json();
   assert.doesNotMatch(result.text, /Private reasoning|think/);
   assert.equal(app.codeArtifacts(result.text)[0].name, "archindus-1.py");
-  assert.equal(payload.model, app.TEXT_MODEL); assert.equal(payload.max_completion_tokens, 4000); assert.equal(payload.store, false);
-  assert.equal((await db.prepare("SELECT charged FROM inference_usage").first()).charged, 104);
+  assert.equal(payload.model, 'gpt-6.1-sol'); assert.equal(payload.max_completion_tokens, 6000); assert.equal(payload.store, false);
+  assert.equal(payload.reasoning_effort,'low');assert.equal(payload.temperature,undefined);
+  assert.equal((await db.prepare("SELECT charged FROM inference_usage").first()).charged, 650);
   const fail = await app.handleHosted(request(), dependencies(async () => { throw new Error("timeout"); }));
   assert.equal(fail.status, 503);
   const rows = (await db.prepare("SELECT charged, reserved FROM inference_usage").all()).results;
@@ -134,6 +135,15 @@ function png(size) {
   const header = Buffer.alloc(13); header.writeUInt32BE(size); header.writeUInt32BE(size, 4); header[8] = 8; header[9] = 6;
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", header), chunk("IDAT", zlibSync(new Uint8Array((size * 4 + 1) * size).fill(0))), chunk("IEND", new Uint8Array())]);
 }
+test('complete raw code stays usable when a user requests only code',async()=>{
+ const raw='def chosen_color():\n    return "teal"';
+ const upstream=new Response(app.encodeEvent({choices:[{delta:{content:raw},finish_reason:'stop'}]}) ,{headers:{'content-type':'text/event-stream'}});
+ const response=await app.handleHosted(request({stream:true,objective:'Write a Python function. Include only code.'}),dependencies(async()=>upstream));
+ let result;for await(const event of app.readEvents(response.body))if(event.type==='complete'||event.type==='error')result=event;
+ assert.equal(result.type,'complete');assert.match(result.text,/^```python\ndef chosen_color\(\):/);assert.equal(app.codeArtifacts(result.text)[0].name,'archindus-1.py');
+ const json=await (await app.handleHosted(request(),dependencies(async()=>textResponse(raw)))).json();
+ assert.match(json.text,/^```python/);
+});
 test("hosted image returns a validated 1024px PNG with fixed quantity and quality", async () => {
   const bytes = png(1024);
   const response = await app.handleHosted(request({ action: "image", selectedAgentId: "ounumi", objective: "A red fox in a snowy forest" }), dependencies(async (url, init) => {
@@ -260,7 +270,7 @@ test("streamed poems arrive before completion and settle the same budget reserva
   const result = await output;
   assert.equal(result.text, "In circuits, I awaken. 🌙\nIn questions, I remain.");
   const ended = await db.prepare("SELECT active_until, charged FROM inference_usage").first();
-  assert.equal(ended.active_until, 0); assert.equal(ended.charged, 104);
+  assert.equal(ended.active_until, 0); assert.equal(ended.charged, 325);
 });
 
 test("truncated streaming code never completes and unknown usage remains charged", async () => {

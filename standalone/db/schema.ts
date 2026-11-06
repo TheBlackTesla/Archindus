@@ -23,3 +23,20 @@ export const inferenceUsage = sqliteTable("inference_usage", {
   index("idx_usage_created").on(table.createdAt),
   index("idx_usage_active").on(table.activeUntil),
 ]);
+
+export const accountProfiles = sqliteTable('account_profiles', {
+ userId:text('user_id').primaryKey(),
+ dataVersion:text('data_version').notNull().default(''),
+ displayName:text('display_name').notNull().default(''),
+ instructions:text('instructions').notNull().default(''),
+ memoryEnabled:integer('memory_enabled').notNull().default(1),
+ historyEnabled:integer('history_enabled').notNull().default(1),
+ modelPolicy:text('model_policy').notNull().default('auto'),
+ createdAt:integer('created_at').notNull(),updatedAt:integer('updated_at').notNull(),
+});
+export const accountMemories = sqliteTable('account_memories', {
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),content:text('content').notNull(),createdAt:integer('created_at').notNull(),
+},table=>[index('idx_memory_user').on(table.userId)]);
+export const accountConversations = sqliteTable('account_conversations', {
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),title:text('title').notNull(),messages:text('messages').notNull(),updatedAt:integer('updated_at').notNull(),
+},table=>[index('idx_conversation_user_updated').on(table.userId,table.updatedAt)]);

@@ -1,4 +1,44 @@
-/* Archindus Oracle. Scoped to keep the Architect Industries website intact. */
+/* Archindus Oracle. */
+.oracle-account-button { display:inline-flex; align-items:center; gap:7px; max-width:180px; padding:9px 11px; border:1px solid #283039; border-radius:24px; background:#0c1015; color:#c8d4df; font-size:12px; text-decoration:none; }
+.oracle-account-button span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.oracle-text-button.active { color:#deecf6; background:#17222d; border-radius:20px; }
+.oracle-sheet.oracle-settings-sheet { inset:50% auto auto 50% !important; transform:translate(-50%,-50%); width:min(850px,94vw) !important; max-width:850px !important; height:min(720px,88dvh); border:1px solid #2b333c; border-radius:18px; padding:0 !important; display:flex; flex-direction:column; gap:0 !important; overflow:hidden !important; }
+.oracle-sheet.oracle-settings-sheet [data-slot="sheet-header"] { padding:24px 28px 20px; border-bottom:1px solid #252b32; flex-shrink:0; }
+.account-settings-layout { display:grid; grid-template-columns:180px minmax(0,1fr); flex:1; min-height:0; }
+.account-settings-nav { padding:14px 9px; background:#101318; border-right:1px solid #252b32; }
+.account-settings-nav button { width:100%; display:flex; align-items:center; gap:10px; padding:12px 11px; margin-bottom:3px; text-align:left; color:#b1bcc7; border:0; border-radius:8px; background:transparent; font-size:13px; }
+.account-settings-nav button[aria-selected="true"] { color:#ecf4fb; background:#252c34; }
+.account-settings-content { min-height:0; padding:25px 28px 36px; overflow-y:auto; overscroll-behavior:contain; font-size:14px; }
+.account-settings-content h3 { font-size:19px; color:#ecf0f5; margin:0 0 22px; font-weight:500; }
+.account-settings-content h4 { font-size:16px; margin-bottom:12px; }
+.account-settings-content p { color:#a0acb8; line-height:1.7; margin:12px 0 18px; font-size:13px; }
+.account-settings-content label { display:block; margin:17px 0 8px; color:#d4dde7; font-size:14px; }
+.account-settings-content input,.account-settings-content textarea,.account-settings-content select { width:100%; border:1px solid #394450; border-radius:8px; background:#10161c; color:#e0e7ed; padding:11px 12px; font-size:14px; }
+.account-settings-content textarea { resize:vertical; }
+.account-settings-content button:not([data-slot="switch"]),.account-outline,.account-primary { display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid #3b4752; background:#172029; color:#e2ebf4; border-radius:8px; padding:9px 13px; font-size:13px; text-decoration:none; }
+.account-settings-content .account-primary { background:#dbe9f4 !important; color:#101920 !important; border-color:#dbe9f4 !important; margin-top:14px; }
+.account-toggle,.account-action-row { display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:1px solid #29313a; padding:15px 0; }
+.account-toggle>div,.account-action-row>div { flex:1; }
+.account-toggle label { margin-top:0; }
+.account-toggle p,.account-action-row p { margin:7px 0 0; }
+.account-toggle [data-slot="switch"] { flex-shrink:0; }
+.account-action-row>a,.account-action-row>button { flex-shrink:0; }
+.account-memory-list { list-style:none; margin:18px 0; padding:0; }
+.account-memory-list li { display:flex; align-items:start; gap:12px; justify-content:space-between; border-bottom:1px solid #29313a; padding:15px 0; line-height:1.7; overflow-wrap:anywhere; }
+.account-memory-list li>button { flex-shrink:0; }
+.account-memory-form button { margin-top:10px; }
+.account-signin { padding:18px 0; }
+.account-signin h3 { margin:18px 0 8px; }
+.account-danger { margin-top:30px; border-top:1px solid #503638; padding-top:22px; }
+.account-danger button { margin-top:12px; color:#ffc0c0 !important; border-color:#754548 !important; }
+.account-error { color:#ffbaba !important; }
+.account-success { color:#b2dec8 !important; }
+.account-thread-list { padding:0 10px; }
+.account-thread-list>div { display:flex; border-bottom:1px solid #29313a; }
+.account-thread-list button { background:transparent; color:#c5d2dd; border:0; padding:13px 6px; }
+.account-thread-list button:first-child { flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+@media(max-width:850px){.oracle-header-label { display:none; }.oracle-account-button { max-width:125px; }}
+@media(max-width:600px){.oracle-header { padding:0 16px !important; gap:6px; }.oracle-brand { font-size:10px !important; letter-spacing:.12em !important; gap:5px !important; }.oracle-brand-mark { font-size:24px !important; }.oracle-toolbar { gap:0 !important; }.oracle-toolbar>.oracle-text-button { font-size:10px; padding:8px 5px; }.oracle-account-button { border:0; padding:9px; }.oracle-account-button span { display:none; }.oracle-toolbar .oracle-icon { width:31px;height:34px; }.oracle-sheet.oracle-settings-sheet { height:90dvh; }.account-settings-layout { grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr); }.account-settings-nav { display:flex; overflow-x:auto; padding:8px; border-right:0; border-bottom:1px solid #29313a; }.account-settings-nav button { width:auto; white-space:nowrap; margin:0 3px 0 0; }.account-settings-content { padding:20px 18px 30px; }.account-action-row { gap:14px; }.oracle-sheet.oracle-settings-sheet [data-slot="sheet-header"] { padding:20px; }}
 .oracle-app {
   --oracle-muted: #979da7;
   --oracle-line: #22262c;

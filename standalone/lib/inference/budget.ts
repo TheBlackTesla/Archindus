@@ -27,9 +27,9 @@ export function configuredLimits(day?: string, month?: string): Limits {
   return { day: amount(day, DEFAULT_LIMITS.day), month: amount(month, DEFAULT_LIMITS.month) };
 }
 export async function clientKey(request: Request, secret: string, day: string) {
-  // Cloudflare supplies this header. Without it all visitors share one bucket.
+  // Sites supplies identity; Cloudflare supplies IP. Without either, share a bucket.
   // Never trust an X-Forwarded-For or a client-selected identifier for quotas.
-  const ip = request.headers.get("cf-connecting-ip") ?? "shared-anonymous";
+  const ip = request.headers.get('oai-authenticated-user-id') ?? request.headers.get("cf-connecting-ip") ?? "shared-anonymous";
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const hash = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${day}:${ip}`));
   return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");

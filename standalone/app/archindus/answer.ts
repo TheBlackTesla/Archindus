@@ -18,6 +18,26 @@ export function isCapabilityDenial(text: string): boolean {
     || /(?:text.based|text.only).{0,100}(?:cannot|can.t|don.t have the ability)/i.test(text);
 }
 
+/** A completed raw-code reply is valid when the user asks for "only code".
+ * Normalize its presentation for downloads; never repair unclosed fences or
+ * treat this formatting step as proof that the code executes.
+ */
+export function formatAnswer(raw:string,task:string):string {
+ const text=finalAnswer(raw);
+ if(task!=='code'||text.includes('```')||isCapabilityDenial(text))return text;
+ const head=text.replace(/^(?:(?:#[^\n]*|\/\/[^\n]*)\n|\s)+/,'');
+ let language='';
+ if(/^(?:from\s+[\w.]+\s+import|import\s+[\w.]+\s*(?:\n|$)|(?:async\s+)?def\s+\w+\s*\(|class\s+\w+[^\n]*:)/.test(head))language='python';
+ else if(/^<!doctype\s+html|^<html\b/i.test(text))language='html';
+ else if(/^(?:export\s+(?:default\s+)?)?(?:(?:async\s+)?function\b|(?:const|let|var)\s+\w+\s*=|class\s+\w+)|^import\s.+from\s/.test(head))language='javascript';
+ else if(/^#include\s*[<"]|^(?:int|void|double|float|char)\s+\w+\s*\(/.test(text))language='cpp';
+ else if(/^package\s+\w+/.test(head))language='go';
+ else if(/^(?:pub\s+)?fn\s+\w+|^use\s+std::/.test(head))language='rust';
+ else if(/^public\s+(?:final\s+)?class\s+\w+/.test(head))language='java';
+ else if(/^(?:SELECT|WITH|CREATE\s+TABLE|INSERT\s+INTO)\b/i.test(head))language='sql';
+ return language?`\`\`\`${language}\n${text}\n\`\`\``:text;
+}
+
 export function validateAnswer(text: string, task: string): string | null {
   if (!text.trim()) return "The model did not produce a final answer.";
   if (task === "code") {
