@@ -1,4 +1,5 @@
 "use client";
+import {runModelLabel} from './run-record';
 import { requestId } from "./request-id";
 
 import Link from "next/link";
@@ -265,7 +266,7 @@ export default function ArchindusClient() {
     const started=performance.now(), attempts:RunRecord["attempts"]=[];
     let firstTextMs:number|undefined, usedImagePermission=false;
     const record=(engine:string):RunRecord=>({engine,firstTextMs,elapsedMs:performance.now()-started,attempts:[...attempts]});
-    const beginAttempt=(engine:string)=>{attempts.push({engine,state:"unavailable"});firstTextMs=undefined;};
+    const beginAttempt=(engine:string)=>{attempts.push({engine,state:"unavailable"});firstTextMs=undefined;patch(id,{model:undefined});};
     const pending: ConversationMessage = { id, role: "assistant", agentId: selected, content: "", status: "generating", sourceText: objective, selectedAgentId: selected,personalityId,personalityName:personality?.name };
     // Retire replaced media only after the next render has stopped displaying it.
     if (original?.imageUrl || original?.media?.length) {
@@ -509,9 +510,9 @@ export default function ArchindusClient() {
             {activeMessage.status === "complete" && !activeMessage.hadImage ? <details className="oracle-save"><summary>Save response</summary><ArtifactCards text={activeMessage.content} /></details> : null}
           </div>
           {activeMessage.status === "complete" && /```/.test(activeMessage.content) ? <div className="oracle-source-files"><ArtifactCards text={activeMessage.content} compact /></div> : null}
-          {activeMessage.run||activeMessage.routeReason?<details className="oracle-receipt"><summary><Terminal size={15} aria-hidden="true"/><strong>Run details</strong><span>{activeMessage.run?activeMessage.run.engine+" · "+duration(activeMessage.run.elapsedMs):"Routing"}</span></summary>
+          {activeMessage.run||activeMessage.routeReason||activeMessage.model?<details className="oracle-receipt"><summary><Terminal size={15} aria-hidden="true"/><strong>Run details</strong><span>{activeMessage.run?runModelLabel(activeMessage.model)+" · "+duration(activeMessage.run.elapsedMs):runModelLabel(activeMessage.model)}</span></summary>
             <dl><dt>Task</dt><dd>{activeMessage.task ?? "Conversation"}</dd>
-            {activeMessage.model?<><dt>Model</dt><dd>{activeMessage.model}</dd></>:null}
+            <dt>Model</dt><dd>{runModelLabel(activeMessage.model)}</dd>{activeMessage.run?<><dt>Engine</dt><dd>{activeMessage.run.engine}</dd></>:null}
             {activeMessage.run?<><dt>First streamed text</dt><dd>{activeMessage.run.firstTextMs!==undefined?duration(activeMessage.run.firstTextMs):"No streamed text"}</dd><dt>End to end</dt><dd>{duration(activeMessage.run.elapsedMs)}</dd></>:null}
             {activeMessage.run?.attempts.length?<><dt>Attempts</dt><dd>{activeMessage.run.attempts.map(a=>a.engine+" ("+a.state+")").join(" → ")}</dd></>:null}</dl>
             {activeMessage.routeReason?<p>{activeMessage.routeReason}</p>:null}</details>:null}

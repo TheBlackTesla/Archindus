@@ -1,3 +1,4 @@
+import {modelLabel} from './model-label';
 import {routedCompletion} from './multi-router';
 import type {Provider} from './providers';
 import { z } from "zod";
@@ -114,7 +115,7 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
     }
     if (streaming && response.headers.get("Content-Type")?.includes("text/event-stream")) {
       streamOwnsSettlement = true;
-      return streamedCompletion(response, { signal, cancel: () => upstream.abort(), task: plan.task, model: model.name, rates:model, settle: actual => settle(deps.db!, input.requestId, actual) });
+      return streamedCompletion(response, { signal, cancel: () => upstream.abort(), task: plan.task, model: modelLabel(model,'OpenAI'), identity:{model,provider:'OpenAI'}, rates:model, settle: actual => settle(deps.db!, input.requestId, actual) });
     }
     const data = await boundedJson(response, image ? 14_000_000 : 200_000);
     if (image) {
@@ -132,10 +133,10 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
     const choice = data.choices?.[0];
     if (choice?.message?.refusal || choice?.finish_reason === "content_filter") return json({ error: "This request could not be completed. Please revise it.", code: "content_refused" }, 422);
     if (choice?.finish_reason !== "stop" || typeof choice?.message?.content !== "string") throw new Error("Incomplete answer");
-    if (planning) return json({ plan: parsePlan(choice.message.content, plan), model: model.name });
+    if (planning) return json({ plan: parsePlan(choice.message.content, plan), model: modelLabel(model,'OpenAI',data.model) });
     const text = formatAnswer(choice.message.content,plan.task);
     if (validateAnswer(text, plan.task)) throw new Error("Invalid answer");
-    return json({ text, model: model.name });
+    return json({ text, model: modelLabel(model,'OpenAI',data.model) });
   } catch(error) { console.warn('Hosted transport failure',{name:error instanceof Error?error.name:'Unknown',message:error instanceof Error?error.message.replace(/sk-[\w-]+/g,'[redacted]').slice(0,160):'Request failed'});return json({ error: "Hosted inference could not complete the request. Trying local inference." }, 503); }
   finally {
     try { if (!streamOwnsSettlement) await settle(deps.db, input.requestId, actual); }

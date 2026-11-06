@@ -10,3 +10,11 @@ export function chatModes(o:{deviceOnly:boolean;ready?:"webgpu"|"cpu";saved:("we
   if(!o.deviceOnly){if(o.qwen)modes.push("qwen");modes.push("hosted");}
   return [...new Set([...modes,...o.saved])];
 }
+
+export function runModelLabel(model?:string){
+ if(!model)return "Model not reported";
+ if(model in engineLabel)return "Model not reported · "+engineLabel[model as EngineMode];
+ if(model==="Archindus"||model==="Archindus memory")return model+" · built-in reply (no LLM)";
+ if(model==="Built-in browser AI")return model+" · model identity not exposed by browser";
+ return model;
+}

@@ -1,3 +1,4 @@
+import {modelLabel} from './model-label';
 import type {TaskPlan} from '../../app/archindus/orchestration';
 import {parsePlan} from '../../app/archindus/orchestration';
 import {formatAnswer,validateAnswer} from '../../app/archindus/answer';
@@ -31,9 +32,10 @@ export async function routedCompletion(c:MultiContext){
     if([400,401,402,403,404,422].includes(response.status))actual=0;
     await pauseProvider(c.db,[401,402,403].includes(response.status)?300:60,c.now(),provider.id);last=provider.name+' is unavailable; another configured engine will be tried.';continue;
    }
-   const name=model.name+' · '+provider.name;
-   if(c.stream&&response.headers.get('content-type')?.includes('text/event-stream')){streamOwns=true;return streamedCompletion(response,{signal,cancel:()=>upstream.abort(),task:c.plan.task,model:name,rates:model,settle:actual=>settle(c.db,id,actual)})}
+   let name=modelLabel(model,provider.name);
+   if(c.stream&&response.headers.get('content-type')?.includes('text/event-stream')){streamOwns=true;return streamedCompletion(response,{signal,cancel:()=>upstream.abort(),task:c.plan.task,model:name,identity:{model,provider:provider.name},rates:model,settle:actual=>settle(c.db,id,actual)})}
    const data=await boundedProviderJson(response),usage=data.usage;if(Number.isSafeInteger(usage?.prompt_tokens)&&usage.prompt_tokens>=0&&Number.isSafeInteger(usage?.completion_tokens)&&usage.completion_tokens>=0)actual=textUsageCost(usage,model);
+   name=modelLabel(model,provider.name,data.model);
    const choice=data.choices?.[0];if(choice?.message?.refusal||choice?.finish_reason==='content_filter')return reply('Please revise your request.',422,'content_refused');
    if(choice?.finish_reason!=='stop'||typeof choice?.message?.content!=='string'){last='A model returned an incomplete answer.';continue}
    if(c.planning)return Response.json({plan:parsePlan(choice.message.content,c.plan),model:name},{headers:{'Cache-Control':'no-store'}});

@@ -38,7 +38,7 @@ export class HostedRuntime {
       if (action === "image") {
         const image = await response.blob();
         await validateGeneratedImage(image, 1024);
-        return { image, model: "GPT Image mini · Hosted" };
+        return { image, model: `${response.headers.get("X-Archindus-Model") || "GPT Image mini (model ID not reported)"} · OpenAI` };
       }
       if (response.headers.get("Content-Type")?.includes("text/event-stream") && response.body) {
         for await (const event of readEvents(response.body, requestSignal)) {

@@ -1,3 +1,4 @@
+import {modelLabel} from './model-label';
 import {z} from 'zod';
 import {accountIdentity,boundedAccountJson,accountPersonalization,type AccountDb} from '../account';
 import {clientKey,reserve,settle,type Limits} from './budget';
@@ -37,7 +38,7 @@ export async function handleMedia(request:Request,deps:Deps){
   const client=await clientKey(request,deps.ledgerSecret,new Date(now).toISOString().slice(0,10));if(!await reserve(db,{id:jobId,client,kind:input.kind,amount:0,zeroCost:true,provider:'comfyui',activeMs:900000,now,limits:deps.limits}))return json({error:'Media generation capacity or rate limit reached.'},429);
   let remoteId:string|undefined;
   try{const response=await send(config.url+'/prompt',{method:'POST',headers:{Authorization:'Bearer '+config.key,'Content-Type':'application/json'},redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(15000)]),body:JSON.stringify({prompt:fillWorkflow(workflow.workflow,prompt,crypto.getRandomValues(new Uint32Array(1))[0]),client_id:jobId})});const result=await boundedProviderJson(response,32000);if(!response.ok||!z.string().uuid().safeParse(result.prompt_id).success)throw Error('GPU worker did not accept the workflow');remoteId=result.prompt_id;
-   await db.prepare('INSERT INTO media_jobs(id,user_id,remote_id,kind,model,width,status,reservation_id,created_at,expires_at,artifact_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(jobId,user.id,remoteId,input.kind,workflow.name,workflow.width,'queued',jobId,now,now+86400000,'').run();return json({id:jobId,status:'queued',model:workflow.name,kind:input.kind},202);
+   await db.prepare('INSERT INTO media_jobs(id,user_id,remote_id,kind,model,width,status,reservation_id,created_at,expires_at,artifact_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(jobId,user.id,remoteId,input.kind,modelLabel({id:workflow.model,name:workflow.name},'ComfyUI'),workflow.width,'queued',jobId,now,now+86400000,'').run();return json({id:jobId,status:'queued',model:modelLabel({id:workflow.model,name:workflow.name},'ComfyUI'),kind:input.kind},202);
   }catch{if(remoteId)await send(config.url+'/queue',{method:'POST',headers:{Authorization:'Bearer '+config.key,'Content-Type':'application/json'},body:JSON.stringify({delete:[remoteId]}),redirect:'error',signal:AbortSignal.timeout(3000)}).catch(()=>{});await settle(db,jobId,0);return json({error:'The GPU worker could not accept this job. Check its models and workflow.'},503)}
  }
  if(!id)return json({error:'Media job not found.'},404);

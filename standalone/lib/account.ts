@@ -24,7 +24,7 @@ const profileSchema=z.object({displayName:z.string().trim().max(120),instruction
 const uuid=z.string().uuid();
 const personalitySchema=z.object({nodeSlot:z.number().int().min(0).max(19).nullable().optional(),name:z.string().trim().min(1).max(60),description:z.string().trim().min(1).max(180),instructions:z.string().trim().min(1).max(2400),capability:z.enum(PERSONALITY_CAPABILITIES),modelPolicy:z.enum(['inherit','economy','quality'])}).strict();
 const personalityColumns='id,node_slot AS nodeSlot,name,description,instructions,capability,model_policy AS modelPolicy,created_at AS createdAt';
-const messageSchema=z.object({id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),personalityId:uuid.optional(),personalityName:z.string().max(60).optional(),model:z.string().max(100).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
+const messageSchema=z.object({id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),personalityId:uuid.optional(),personalityName:z.string().max(60).optional(),model:z.string().max(400).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
 
 export async function handleAccount(request:Request,db:AccountDb|undefined,options:{credentialsKey?:string}={}){
  const path=new URL(request.url).pathname.split('/').filter(Boolean).slice(2);

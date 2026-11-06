@@ -1,3 +1,4 @@
+import {modelLabel} from '../../../../lib/inference/model-label';
 import { streamedCompletion } from "../../../../lib/inference/stream";
 import { z } from "zod";
 import { AGENTS, getAgentPrompt, type AgentId } from "../../../archindus/agents";
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.ARCHINDUS_QWEN_API_KEY?.trim()) headers.Authorization = `Bearer ${process.env.ARCHINDUS_QWEN_API_KEY.trim()}`;
   try {
+    const model={id:process.env.ARCHINDUS_QWEN_MODEL?.trim()||"Qwen/Qwen3.8-27B",name:process.env.ARCHINDUS_QWEN_MODEL?.trim()||"Qwen/Qwen3.8-27B"};
     const streaming = input.action === "generate" && input.stream === true;
     const controller=new AbortController();
     const signal=AbortSignal.any([request.signal,controller.signal,AbortSignal.timeout(120_000)]);
@@ -46,14 +48,14 @@ export async function POST(request: Request) {
     });
     if (!result.ok) return json({ error: "The private runtime is unavailable. Trying browser inference." }, 503);
     if (streaming && result.headers.get("Content-Type")?.includes("text/event-stream")) {
-      return streamedCompletion(result,{signal,cancel:()=>controller.abort(),task:plan.task,model:process.env.ARCHINDUS_QWEN_MODEL?.trim()||"Private Qwen",settle:async()=>{}});
+      return streamedCompletion(result,{signal,cancel:()=>controller.abort(),task:plan.task,model:modelLabel(model,'Private server'),identity:{model,provider:'Private server'},settle:async()=>{}});
     }
-    const output = await result.json() as { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
+    const output = await result.json() as { model?:string;choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
     const choice = output.choices?.[0];
-    if (input.action === "plan") return json({ plan: parsePlan(choice?.message?.content ?? "", plan), model: "Private Qwen" });
+    if (input.action === "plan") return json({ plan: parsePlan(choice?.message?.content ?? "", plan), model: modelLabel(model,'Private server',output.model) });
     const text = formatAnswer(choice?.message?.content ?? "",plan.task);
     const error = choice?.finish_reason === "length" ? "The private model reached its answer limit." : validateAnswer(text, plan.task);
     if (error) return json({ error }, 502);
-    return json({ text, model: process.env.ARCHINDUS_QWEN_MODEL?.trim() || "Private Qwen" });
+    return json({ text, model: modelLabel(model,'Private server',output.model) });
   } catch { return json({ error: "The private runtime could not complete this request." }, 503); }
 }

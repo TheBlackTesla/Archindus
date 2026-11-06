@@ -1,3 +1,4 @@
+import {modelLabel} from './model-label';
 import { AnswerStream, encodeEvent, readEvents } from "../../app/archindus/stream";
 import { validateAnswer,formatAnswer } from "../../app/archindus/answer";
 import { textUsageCost } from './models';
@@ -5,12 +6,14 @@ import { textUsageCost } from './models';
 export function streamedCompletion(response: Response, options: {
   signal: AbortSignal; cancel: () => void; task: string; model: string;
   settle: (actual?: number) => Promise<void>;
+  identity?:{model:{id:string;name:string};provider:string};
   rates?: {input:number;output:number;cached?:number};
 }) {
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       let actual: number | undefined;
+      let label=options.model;
       let completed: Record<string, unknown>;
       const send = (value: unknown) => { if (!cancelled) controller.enqueue(encodeEvent(value)); };
       try {
@@ -18,6 +21,7 @@ export function streamedCompletion(response: Response, options: {
         const answer = new AnswerStream();
         let finish = "", last = "", lastTime = 0;
         for await (const data of readEvents(response.body, options.signal)) {
+          if(options.identity&&typeof data.model==='string')label=modelLabel(options.identity.model,options.identity.provider,data.model);
           if(data.error){const e=new Error("Upstream stream failed");if(/content_policy|moderation|safety|refusal/i.test(String(data.error.code??data.error.type??'')))e.name='HostedRefusal';throw e;}
           if (data.usage && Number.isSafeInteger(data.usage.prompt_tokens) && data.usage.prompt_tokens > 0 && Number.isSafeInteger(data.usage.completion_tokens) && data.usage.completion_tokens >= 0) {
             actual = options.rates ? textUsageCost(data.usage,options.rates) : Math.ceil(data.usage.prompt_tokens * 0.4 + data.usage.completion_tokens * 1.6);
@@ -30,14 +34,14 @@ export function streamedCompletion(response: Response, options: {
           if (typeof choice?.delta?.content === "string") {
             const text = answer.push(choice.delta.content);
             if (text !== last && (!last || Date.now() - lastTime >= 45)) {
-              send({ type: "partial", text, model: options.model }); last = text; lastTime = Date.now();
+              send({ type: "partial", text, model: label }); last = text; lastTime = Date.now();
             }
           }
         }
         options.signal.throwIfAborted();
         const text = finish==='stop'?formatAnswer(answer.finish(),options.task):answer.finish();
         if (finish !== "stop" || validateAnswer(text, options.task)) throw new Error("Incomplete answer");
-        completed = { type: "complete", text, model: options.model };
+        completed = { type: "complete", text, model: label };
       } catch (error) {
         completed = { type: "error", code: error instanceof Error && error.name === "HostedRefusal" ? "content_refused" : "incomplete_stream", error: "The answer was interrupted. Please retry." };
       }
