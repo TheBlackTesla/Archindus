@@ -100,3 +100,9 @@ moving the application to another service.
 This frontend runtime is isolated in `standalone/` within GitHub and does not
 replace the repository's full Archindus backend. Archindus.AI and Archindus.App
 have not been reassigned.
+
+## Interactive intelligence map
+
+Click the neural brain to expand a routing workbench above the conversation. Scroll to zoom, drag to pan, or use keyboard arrows and +/- (0 resets). Select nodes or use the node picker to inspect specialists and model tiers. The highlighted path comes from the current/last request metadata, not hidden model reasoning. Architecture lines illustrate possible stages and do not assert that every provider is online.
+
+Signed-in users can create, edit, select, and delete up to 20 private AI personalities. Each has a name, specialty, instructions, base capability, and economy/quality/inherited model policy. These are specializations of Archindus, not separately trained models or new tool permissions. Hosted inference loads definitions by authenticated owner and ID, enforces server budgets, and rejects missing or foreign personalities. Explicitly selected personality instructions still apply in temporary chats; saved memories and global custom instructions do not. Personalities are included in data export and account deletion. Apply the appended Drizzle migration with the rest of the deployment migrations.

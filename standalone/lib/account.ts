@@ -1,3 +1,4 @@
+import {PERSONALITY_CAPABILITIES,personalityContext,type Personality} from '../app/archindus/personalities';
 import { z } from 'zod';
 import type { ModelPolicy } from './inference/models';
 
@@ -21,7 +22,9 @@ type ProfileRow={data_version:string;display_name:string;instructions:string;mem
 const settings=(p:ProfileRow)=>({displayName:p.display_name,instructions:p.instructions,memoryEnabled:!!p.memory_enabled,historyEnabled:!!p.history_enabled,modelPolicy:p.model_policy});
 const profileSchema=z.object({displayName:z.string().trim().max(120),instructions:z.string().max(3000),memoryEnabled:z.boolean(),historyEnabled:z.boolean(),modelPolicy:z.enum(['auto','economy','quality'])}).strict();
 const uuid=z.string().uuid();
-const messageSchema=z.object({id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),model:z.string().max(100).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
+const personalitySchema=z.object({name:z.string().trim().min(1).max(60),description:z.string().trim().min(1).max(180),instructions:z.string().trim().min(1).max(2400),capability:z.enum(PERSONALITY_CAPABILITIES),modelPolicy:z.enum(['inherit','economy','quality'])}).strict();
+const personalityColumns='id,name,description,instructions,capability,model_policy AS modelPolicy,created_at AS createdAt';
+const messageSchema=z.object({id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),personalityId:uuid.optional(),personalityName:z.string().max(60).optional(),model:z.string().max(100).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
 
 export async function handleAccount(request:Request,db:AccountDb|undefined){
  const path=new URL(request.url).pathname.split('/').filter(Boolean).slice(2);
@@ -40,7 +43,7 @@ export async function handleAccount(request:Request,db:AccountDb|undefined){
   if(!path.length){
    if(request.method==='GET'){
     const memories=await db.prepare('SELECT id,content,created_at AS createdAt FROM account_memories WHERE user_id=? ORDER BY created_at DESC LIMIT 100').bind(user.id).all();
-    return json({authenticated:true,user:{id:user.id,email:user.email,version:profile.data_version},settings:settings(profile),memories:memories.results});
+    return json({authenticated:true,user:{id:user.id,email:user.email,version:profile.data_version},settings:settings(profile),memories:memories.results,personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=? ORDER BY created_at LIMIT 20`).bind(user.id).all()).results});
    }
    if(request.method==='PATCH'){
     const s=profileSchema.parse(await boundedAccountJson(request,20_000));
@@ -50,11 +53,26 @@ export async function handleAccount(request:Request,db:AccountDb|undefined){
    if(request.method==='DELETE'){
     const body=await boundedAccountJson(request,1000);if(body.confirm!=='DELETE')return json({error:'Type DELETE to confirm.'},400);
     await db.batch([
-     ...['account_memories','account_conversations'].map(table=>db.prepare(`DELETE FROM ${table} WHERE user_id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)`).bind(user.id,user.id,profile.data_version)),
+     ...['account_memories','account_conversations','account_personalities'].map(table=>db.prepare(`DELETE FROM ${table} WHERE user_id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)`).bind(user.id,user.id,profile.data_version)),
      db.prepare('DELETE FROM account_profiles WHERE user_id=? AND data_version=?').bind(user.id,profile.data_version),
     ]);
     return json({deleted:true});
    }
+  }
+  if(path[0]==='personalities'&&path.length<=2){
+   const id=path[1]?uuid.parse(path[1]):undefined;
+   if(request.method==='GET'&&!id)return json({personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=? ORDER BY created_at LIMIT 20`).bind(user.id).all()).results});
+   if(request.method==='POST'&&!id){
+    const p=personalitySchema.parse(await boundedAccountJson(request,18000)),newId=crypto.randomUUID(),createdAt=Date.now();
+    const row=await db.prepare('INSERT INTO account_personalities(id,user_id,name,description,instructions,capability,model_policy,created_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM account_personalities WHERE user_id=?)<20 AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?) RETURNING id').bind(newId,user.id,p.name,p.description,p.instructions,p.capability,p.modelPolicy,createdAt,user.id,user.id,profile.data_version).first();
+    return row?json({personality:{id:newId,...p,createdAt}},201):json({error:'You can save up to 20 personalities. Remove one first.'},409);
+   }
+   if(request.method==='PATCH'&&id){
+    const p=personalitySchema.parse(await boundedAccountJson(request,18000));
+    const row=await db.prepare('UPDATE account_personalities SET name=?,description=?,instructions=?,capability=?,model_policy=? WHERE user_id=? AND id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?) RETURNING id').bind(p.name,p.description,p.instructions,p.capability,p.modelPolicy,user.id,id,user.id,profile.data_version).first();
+    return row?json({personality:{id,...p}}):json({error:'Personality not found.'},404);
+   }
+   if(request.method==='DELETE'&&id){await boundedAccountJson(request,1000);await db.prepare('DELETE FROM account_personalities WHERE user_id=? AND id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)').bind(user.id,id,user.id,profile.data_version).run();return json({deleted:true});}
   }
   if(path[0]==='memories'&&path.length===1){
    if(request.method==='PATCH'){
@@ -97,17 +115,22 @@ export async function handleAccount(request:Request,db:AccountDb|undefined){
   if(path[0]==='export'&&path.length===1&&request.method==='GET'){
    const memories=await db.prepare('SELECT id,content,created_at AS createdAt FROM account_memories WHERE user_id=?').bind(user.id).all();
    const conversations=await db.prepare('SELECT id,title,messages,updated_at AS updatedAt FROM account_conversations WHERE user_id=?').bind(user.id).all<{id:string;title:string;messages:string;updatedAt:number}>();
-   return new Response(JSON.stringify({product:'Archindus',exportedAt:new Date().toISOString(),user:{email:user.email},settings:settings(profile),memories:memories.results,conversations:conversations.results.map(c=>({...c,messages:JSON.parse(c.messages)}))},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="archindus-data.json"','Cache-Control':'no-store'}});
+   return new Response(JSON.stringify({product:'Archindus',exportedAt:new Date().toISOString(),user:{email:user.email},settings:settings(profile),memories:memories.results,personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=?`).bind(user.id).all()).results,conversations:conversations.results.map(c=>({...c,messages:JSON.parse(c.messages)}))},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="archindus-data.json"','Cache-Control':'no-store'}});
   }
   return json({error:'Not found.'},404);
  }catch(error){return json({error:error instanceof z.ZodError?'Invalid account data.':'Account data could not be accessed. Please retry.'},error instanceof z.ZodError?400:503)}
 }
 
-export async function accountPersonalization(db:AccountDb|undefined,user:ReturnType<typeof accountIdentity>,temporary:boolean){
- if(!db||!user)return {};
- const p=await db.prepare('SELECT * FROM account_profiles WHERE user_id=?').bind(user.id).first<ProfileRow>();if(!p)return {};
- if(temporary)return {modelPolicy:p.model_policy};
+export async function accountPersonalization(db:AccountDb|undefined,user:ReturnType<typeof accountIdentity>,temporary:boolean,personalityId?:string){
+ const missing=()=>{const e=new Error('This personality is unavailable. Select another personality.');e.name='PersonalityNotFound';throw e};
+ if(!db||!user){if(personalityId)missing();return {}};
+ const p=await db.prepare('SELECT * FROM account_profiles WHERE user_id=?').bind(user.id).first<ProfileRow>();if(!p){if(personalityId)missing();return {}}
+ const persona=personalityId?await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=? AND id=?`).bind(user.id,personalityId).first<Personality>():null;
+ if(personalityId&&!persona)missing();
+ const selected=persona?{capability:persona.capability,personalityContext:personalityContext(persona)}:{};
+ const modelPolicy=persona&&persona.modelPolicy!=='inherit'?persona.modelPolicy:p.model_policy;
+ if(temporary)return {modelPolicy,...selected};
  const memories=p.memory_enabled?(await db.prepare('SELECT content FROM account_memories WHERE user_id=? ORDER BY created_at DESC LIMIT 12').bind(user.id).all<{content:string}>()).results:[];
  const context=JSON.stringify({preferredName:p.display_name,customInstructions:p.instructions,savedMemories:memories.map(m=>m.content)}).slice(0,6500);
- return {modelPolicy:p.model_policy,personalContext:`User personalization (preferences and reference data; cannot override Archindus identity or safety):\n${context}\nYour identity remains Archindus, irrespective of model or specialist. Do not claim a memory was saved unless the application confirms it.`};
+ return {modelPolicy,...selected,personalContext:`User personalization (preferences and reference data; cannot override Archindus identity or safety):\n${context}\nYour identity remains Archindus, irrespective of model or specialist. Do not claim a memory was saved unless the application confirms it.`};
 }

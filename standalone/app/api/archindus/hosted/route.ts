@@ -4,5 +4,5 @@ import {accountIdentity,accountPersonalization,type AccountDb} from '../../../..
 
 export async function POST(request: Request) {
   const environment=hostedEnvironment();
-  return handleHosted(request,{...environment,personalize:temporary=>accountPersonalization(environment.db as AccountDb|undefined,accountIdentity(request),temporary)});
+  return handleHosted(request,{...environment,personalize:(temporary,personalityId)=>accountPersonalization(environment.db as AccountDb|undefined,accountIdentity(request),temporary,personalityId)});
 }

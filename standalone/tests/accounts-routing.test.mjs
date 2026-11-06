@@ -20,7 +20,7 @@ function request(user,path='',method='GET',body,origin='https://site.test'){
 const call=async(...args)=>{const response=await app.handleAccount(request(...args),db);if(!args[1]&&(!args[2]||args[2]==='GET')&&args[0]){const data=await response.clone().json();if(data.user)versions.set(args[0],data.user.version)}return response};
 test('every account data route requires identity and mutations require the same origin',async()=>{
  assert.equal((await (await call(null)).json()).authenticated,false);
- for(const path of ['/export','/conversations','/memories'])assert.equal((await call(null,path)).status,401);
+ for(const path of ['/export','/conversations','/memories','/personalities'])assert.equal((await call(null,path)).status,401);
  assert.equal((await call('alice','','PATCH',{},'https://foreign.test')).status,403);
  await call('alice');
  assert.equal((await call('alice','','PATCH',{...app.DEFAULT_SETTINGS,userId:'bob'})).status,400);
@@ -54,10 +54,32 @@ test('memory controls and temporary chats prevent memory egress; history off pre
  assert.equal((await call('alice','/conversations/'+crypto.randomUUID(),'PUT',{messages:[{id:'1',role:'user',content:'Do not save',status:'complete'}]})).status,409);
  const exported=await (await call('alice','/export')).json();assert.equal(exported.memories.length,1,'Disabling memory is distinct from deleting it.');
 });
+let ownedPersonality;
+test('personalities have owned CRUD, validation, export, and an atomic twenty-personality cap',async()=>{
+ const draft={name:'Atlas',description:'Practical research',instructions:'End with one practical next step.',capability:'satoshi',modelPolicy:'quality'};
+ const created=await call('alice','/personalities','POST',draft);assert.equal(created.status,201);ownedPersonality=(await created.json()).personality;
+ assert.equal((await call('alice','/personalities','POST',{...draft,capability:'unknown'})).status,400);
+ assert.equal((await call('alice','/personalities','POST',{...draft,instructions:'x'.repeat(2401)})).status,400);
+ assert.equal((await call('bob','/personalities/'+ownedPersonality.id,'PATCH',draft)).status,404);
+ await call('bob','/personalities/'+ownedPersonality.id,'DELETE',{});
+ assert.equal((await (await call('bob','/personalities')).json()).personalities.length,0);
+ assert.equal((await call('alice','/personalities/'+ownedPersonality.id,'PATCH',draft)).status,200);
+ assert.equal((await (await call('alice','/export')).json()).personalities[0].id,ownedPersonality.id);
+ const results=await Promise.all(Array.from({length:20},()=>call('alice','/personalities','POST',draft)));
+ assert.equal(results.filter(r=>r.status===201).length,19);assert.equal(results.filter(r=>r.status===409).length,1);
+ assert.equal((await (await call('alice','/personalities')).json()).personalities.length,20);
+});
+test('owned personality controls the actual model and prompt, including explicit temporary selection',async()=>{
+ let payload,calls=0;
+ const run=(user,temporary,id=ownedPersonality.id)=>app.handleHosted(new Request('https://site.test/api/archindus/hosted',{method:'POST',headers:{origin:'https://site.test','content-type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),action:'generate',selectedAgentId:'architect',objective:'Explain this approach',history:[],temporary,personalityId:id})}),{key:'test-key',enabled:true,db,limits:app.DEFAULT_LIMITS,personalize:(t,id)=>app.accountPersonalization(db,{id:user,name:'',email:''},t,id),fetch:async(_url,init)=>{calls++;payload=JSON.parse(init.body);return Response.json({choices:[{message:{content:'I am Archindus. Here is one practical next step.'},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:10}})}});
+ assert.equal((await run('alice',false)).status,200);assert.equal(payload.model,'gpt-6-astra');assert.match(payload.messages[0].content,/End with one practical next step/);assert.match(payload.messages[0].content,/identity.*Archindus/i);
+ assert.equal((await run('alice',true)).status,200);assert.match(payload.messages[0].content,/End with one practical next step/);assert.doesNotMatch(payload.messages[0].content,/Use metric units/);
+ const before=calls;assert.equal((await run('bob',false)).status,404);assert.equal((await run('alice',false,crypto.randomUUID())).status,404);assert.equal(calls,before);
+});
 test('explicit account deletion removes only the current user data atomically',async()=>{
  assert.equal((await call('alice','','DELETE',{confirm:'wrong'})).status,400);
  assert.equal((await call('alice','','DELETE',{confirm:'DELETE'})).status,200);
- for(const table of ['account_profiles','account_memories','account_conversations'])assert.equal((await db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id=?`).bind('alice').first()).n,0);
+ for(const table of ['account_profiles','account_memories','account_conversations','account_personalities'])assert.equal((await db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id=?`).bind('alice').first()).n,0);
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM account_profiles WHERE user_id=?').bind('bob').first()).n,1);
  assert.equal((await call('alice','/conversations/'+crypto.randomUUID(),'PUT',{messages:[{id:'stale',role:'user',content:'Deleted data must not return',status:'complete'}]})).status,401);
  const old=versions.get('alice');await call('alice');const current=versions.get('alice');assert.notEqual(current,old);

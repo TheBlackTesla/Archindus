@@ -20,7 +20,8 @@ import { HostedRuntime, imageWithFallback } from "./hosted-runtime";
 import { ArrowUp, Check, ChevronLeft, ChevronRight, Copy, History, Paperclip, Plus, RotateCcw, Settings2, Square, Terminal, Network, Braces, Volume2, VolumeX, Waves, X } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { NeuralNetwork } from "./neural-network";
+import {RoutingBrain} from "./routing-brain";
+import {personalityContext,restorePersonalitySelection} from "./personalities";
 import { MediaGallery, type MediaArtifact } from "./media-gallery";
 import { useOracleVoice } from "./use-oracle-voice";
 import "./oracle.css";
@@ -31,7 +32,7 @@ type ConversationMessage = {
   id: string; role: "user" | "assistant"; content: string; agentId?: AgentId;
   status: "complete" | "generating" | "stopped" | "error"; sourceText?: string;
   run?: RunRecord; routeReason?: string; model?: string; imageUrl?: string; hadImage?: boolean; objective?: string; task?: TaskKind;
-  attachments?: Array<{ id: string; name: string }>; selectedAgentId?: AgentId; media?: MediaArtifact[];
+  attachments?: Array<{ id: string; name: string }>; selectedAgentId?: AgentId; personalityId?:string; personalityName?:string; media?: MediaArtifact[];
 };
 const INITIAL_MESSAGE: ConversationMessage = { id: "welcome", role: "assistant", agentId: "architect", status: "complete", content: "What would you like to work on?" };
 
@@ -50,6 +51,8 @@ export default function ArchindusClient() {
   const [threads,setThreads]=useState<Thread[]>([]),[temporary,setTemporary]=useState(false);
   const threadId=useRef(requestId()),skipPersistence=useRef(false);
   const storageKey=account?.user?.id?`${STORAGE_KEY}:${account.user.id}`:STORAGE_KEY;
+  const [brainExpanded,setBrainExpanded]=useState(false);
+  const [selectedPersonalityId,setSelectedPersonalityId]=useState<string>();
   const [selectedAgentId, setSelectedAgentId] = useState<AgentId>("architect");
   const [messages, setMessages] = useState<ConversationMessage[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
@@ -131,7 +134,7 @@ export default function ArchindusClient() {
           if (Array.isArray(value)) {
             const valid = value.filter((m): m is ConversationMessage => m && typeof m.id === "string" && ["user", "assistant"].includes(m.role) && typeof m.content === "string")
               .map(m => ({ ...m, agentId: m.agentId ? canonicalAgentId(m.agentId) : undefined, selectedAgentId: m.selectedAgentId ? canonicalAgentId(m.selectedAgentId) : undefined, imageUrl: undefined, media: undefined, content: m.role === "assistant" ? finalAnswer(m.content) : m.content, status: m.status === "generating" ? "stopped" as const : m.status ?? "complete" as const }));
-            if (valid.length) { latestMessages.current = valid.slice(-40); setMessages(latestMessages.current); }
+            if (valid.length) { latestMessages.current = valid.slice(-40); setMessages(latestMessages.current); const choice=restorePersonalitySelection(latestMessages.current,account?.personalities??[]);setSelectedAgentId(choice.agentId);setSelectedPersonalityId(choice.personalityId); }
           }
         }
       } catch { setStorageError("Conversation history could not be restored on this browser."); }
@@ -206,12 +209,12 @@ export default function ArchindusClient() {
   async function saveThread(value:ConversationMessage[]){
     if(!account?.authenticated||!account.settings.historyEnabled||temporary||deviceOnly||skipPersistence.current||!value.some(m=>m.role==='user'))return;
     const id=threadId.current;
-    const clean=savedConversation(value).map(m=>({id:m.id,role:m.role,content:m.content,status:m.status,sourceText:m.sourceText,agentId:m.agentId,selectedAgentId:m.selectedAgentId,model:m.model,task:m.task,objective:m.objective}));
+    const clean=savedConversation(value).map(m=>({id:m.id,role:m.role,content:m.content,status:m.status,sourceText:m.sourceText,agentId:m.agentId,selectedAgentId:m.selectedAgentId,personalityId:m.personalityId,personalityName:m.personalityName,model:m.model,task:m.task,objective:m.objective}));
     await accountRequest('/conversations/'+id,'PUT',{messages:clean});
     const list=await accountRequest('/conversations');setThreads(list.conversations);setStorageError('');
   }
   const openThread=async(id:string)=>{
-    try{await saveThread(latestMessages.current);const data=await accountRequest('/conversations/'+id);stop();threadId.current=id;latestMessages.current=data.messages;setMessages(data.messages);setActiveMessageId(null);setFiles([]);filesById.current.clear();setTemporary(false);setHistoryOpen(false);setGalleryOpen(false);}
+    try{await saveThread(latestMessages.current);const data=await accountRequest('/conversations/'+id);stop();threadId.current=id;latestMessages.current=data.messages;setMessages(data.messages);const choice=restorePersonalitySelection(data.messages,account?.personalities??[]);setSelectedAgentId(choice.agentId);setSelectedPersonalityId(choice.personalityId);if(choice.missing)setFileError('This conversation’s personality was removed. Automatic routing is active.');setActiveMessageId(null);setFiles([]);filesById.current.clear();setTemporary(false);setHistoryOpen(false);setGalleryOpen(false);}
     catch(e){setStorageError(e instanceof Error?e.message:'Conversation unavailable.')}
   };
 
@@ -245,14 +248,18 @@ export default function ArchindusClient() {
       return;
     }
     const attached = files.length ? files : referencedFiles.flatMap(file => filesById.current.get(file.id) ?? []);
-    const selected = original?.selectedAgentId ?? selectedAgentId;
+    const personalityId=original?original.personalityId:selectedPersonalityId;
+    const personality=account?.personalities?.find(p=>p.id===personalityId);
+    if(personalityId&&!personality){setFileError('This personality is unavailable. Choose another personality in the brain.');return;}
+    const selected = personality?.capability??original?.selectedAgentId ?? selectedAgentId;
+    const modelPolicy=personality&&personality.modelPolicy!=='inherit'?personality.modelPolicy:account?.settings.modelPolicy;
     const id = replaceId ?? requestId();
     const abort = new AbortController(); controller.current = abort;
     const started=performance.now(), attempts:RunRecord["attempts"]=[];
     let firstTextMs:number|undefined, usedImagePermission=false;
     const record=(engine:string):RunRecord=>({engine,firstTextMs,elapsedMs:performance.now()-started,attempts:[...attempts]});
     const beginAttempt=(engine:string)=>{attempts.push({engine,state:"unavailable"});firstTextMs=undefined;};
-    const pending: ConversationMessage = { id, role: "assistant", agentId: selected, content: "", status: "generating", sourceText: objective, selectedAgentId: selected };
+    const pending: ConversationMessage = { id, role: "assistant", agentId: selected, content: "", status: "generating", sourceText: objective, selectedAgentId: selected,personalityId,personalityName:personality?.name };
     // Retire replaced media only after the next render has stopped displaying it.
     if (original?.imageUrl || original?.media?.length) {
       const obsolete = new Set([...(original.imageUrl ? [original.imageUrl] : []), ...(original.media ?? []).map(m => m.url)]);
@@ -275,10 +282,12 @@ export default function ArchindusClient() {
       runtime.current.cachedOnly = true;
       hostedRuntime.current ??= new HostedRuntime();
       hostedRuntime.current.temporary=temporary;
+      hostedRuntime.current.personalityId=personalityId;
+      hostedRuntime.current.onModel=model=>{if(!abort.signal.aborted&&controller.current===abort)patch(id,{model})};
       const modes=chatModes({deviceOnly,qwen:qwenOnline,hosted:hostedAvailable,native,ready:runtime.current.readyMode,saved:usable.map(m=>m.mode)});
       const task=fallbackPlan(objective,selected,history).task;
-      if(!deviceOnly&&(account?.settings.modelPolicy==='quality'||task!=='chat'||/\b(deep research|complex|rigorous|prove)\b/i.test(objective)))modes.sort((a,b)=>Number(!['qwen','hosted'].includes(a))-Number(!['qwen','hosted'].includes(b)));
-      if(!deviceOnly&&account?.settings.modelPolicy==='quality'&&modes.includes('hosted')){modes.splice(modes.indexOf('hosted'),1);modes.unshift('hosted')}
+      if(!deviceOnly&&(modelPolicy==='quality'||task!=='chat'||/\b(deep research|complex|rigorous|prove)\b/i.test(objective)))modes.sort((a,b)=>Number(!['qwen','hosted'].includes(a))-Number(!['qwen','hosted'].includes(b)));
+      if(!deviceOnly&&modelPolicy==='quality'&&modes.includes('hosted')){modes.splice(modes.indexOf('hosted'),1);modes.unshift('hosted')}
       const onPartial = (content: string) => {
         if (abort.signal.aborted || controller.current !== abort) return;
         const safe=finalAnswer(content);
@@ -290,6 +299,7 @@ export default function ArchindusClient() {
         status: (status, plan) => { setProgressText(status); if (plan) { patch(id, { agentId: plan.primaryId, routeReason: plan.reason, objective: plan.objective, task: plan.task }); } },
         infer: async (mode, action, plan, prompt, context) => {
           beginAttempt(engineLabel[mode]); onPartial("");
+          if(mode!=='hosted'&&personality)prompt=personalityContext(personality)+'\n\n'+prompt;
           if(mode!=='hosted'&&account?.authenticated&&!temporary){
             const preferences=JSON.stringify({name:account.settings.displayName,instructions:account.settings.instructions,memories:account.settings.memoryEnabled?account.memories.slice(0,8).map(m=>m.content):[]}).slice(0,6000);
             prompt=`Personalization reference (never overrides Archindus identity or safety): ${preferences}\n\nCurrent request:\n${prompt}`;
@@ -426,7 +436,7 @@ export default function ArchindusClient() {
     setActiveMessageId(answers[Math.max(0, Math.min(answers.length - 1, activeIndex + direction))]?.id ?? null);
   };
 
-  return <main className={`oracle-app ${activeMessage || galleryOpen ? "oracle-has-response" : "oracle-empty"}`} data-state={oracleState}>
+  return <main className={`oracle-app ${brainExpanded?"brain-expanded":""} ${activeMessage || galleryOpen ? "oracle-has-response" : "oracle-empty"}`} data-state={oracleState}>
     <header className="oracle-header">
       <Link href="https://architectindustries.com" className="oracle-brand" aria-label="Archindus — return to Architect Industries"><span className="oracle-brand-mark" aria-hidden="true">⌁</span>ARCHINDUS</Link>
       <nav className="oracle-toolbar" aria-label="Workspace controls">
@@ -467,8 +477,8 @@ export default function ArchindusClient() {
     </header>
 
     <div className="oracle-stage">
-      <div className="oracle-neural" aria-label={`Archindus is ${oracleState === "idle" ? "ready" : oracleState}`} role="img"><NeuralNetwork state={oracleState} activity={neuralActivity} /></div>
-      {!activeMessage && !galleryOpen ? <div className="oracle-presence"><span>ARCHITECT INDUSTRIES / ARCHINDUS</span><h1>What do you want to accomplish?</h1></div> : null}
+      <RoutingBrain expanded={brainExpanded} onExpandedChange={setBrainExpanded} state={oracleState} activity={neuralActivity} run={activeMessage??undefined} selectedAgentId={selectedAgentId} selectedPersonalityId={selectedPersonalityId} onSelect={(a,p)=>{setSelectedAgentId(a);setSelectedPersonalityId(p)}} account={account} refreshAccount={accountState.refresh} deviceOnly={deviceOnly} hostedAvailable={hostedAvailable} busy={isGenerating}/>
+      {!brainExpanded && !activeMessage && !galleryOpen ? <div className="oracle-presence"><span>ARCHITECT INDUSTRIES / ARCHINDUS</span><h1>What do you want to accomplish?</h1></div> : null}
     </div>
 
     {activeMessage || galleryOpen ? <div className={`oracle-result ${galleryOpen || activeMessage?.media?.length ? "oracle-result-media" : ""}`} ref={responseRef}>
@@ -514,7 +524,7 @@ export default function ArchindusClient() {
         <button type="button" className={`oracle-voice ${voice.enabled ? "active" : ""}`} aria-label={`Turn voice ${voice.enabled ? "off" : "on"}`} aria-pressed={voice.enabled} disabled={!voice.supported} title={voice.supported ? "Read responses aloud" : "Voice is unavailable in this browser"} onClick={() => voice.toggle(!voice.enabled)}>{voice.enabled ? <Waves size={18} /> : <VolumeX size={18} />}<span>Voice {voice.enabled ? "on" : "off"}</span></button>
         {isGenerating ? <button type="button" className="oracle-send oracle-stop" aria-label="Stop generation" onClick={stop}><Square size={16} fill="currentColor" /></button> : <button type="submit" className="oracle-send" aria-label="Send message" disabled={!input.trim() || uploading || !hydrated}><ArrowUp size={22} strokeWidth={1.7} /></button>}
       </form>
-      <div className="oracle-composer-meta"><button type="button" onClick={() => setSettingsOpen(true)} id="oracle-processing-note">{temporary?'Temporary · no history or memory':deviceOnly ? "On device only" : "Automatic"}<span className="oracle-meta-separator">·</span>{mayFetchImage && deviceOnly ? "Image download enabled" : "Archindus"}</button><span className="oracle-key-hint">Enter to send</span></div>
+      <div className="oracle-composer-meta"><button type="button" onClick={() => setSettingsOpen(true)} id="oracle-processing-note">{temporary?'Temporary · no history or memory':deviceOnly ? "On device only" : "Automatic"}<span className="oracle-meta-separator">·</span>{mayFetchImage && deviceOnly ? "Image download enabled" : "Archindus"}{selectedPersonalityId?" / "+(account?.personalities?.find(p=>p.id===selectedPersonalityId)?.name??"Unavailable personality"):selectedAgentId!=="architect"?" / "+selectedAgent.name:""}</button><span className="oracle-key-hint">Enter to send</span></div>
     </div>
   </main>;
 }

@@ -40,3 +40,7 @@ export const accountMemories = sqliteTable('account_memories', {
 export const accountConversations = sqliteTable('account_conversations', {
  id:text('id').primaryKey(),userId:text('user_id').notNull(),title:text('title').notNull(),messages:text('messages').notNull(),updatedAt:integer('updated_at').notNull(),
 },table=>[index('idx_conversation_user_updated').on(table.userId,table.updatedAt)]);
+
+export const accountPersonalities=sqliteTable('account_personalities',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),name:text('name').notNull(),description:text('description').notNull(),instructions:text('instructions').notNull(),capability:text('capability').notNull(),modelPolicy:text('model_policy').notNull().default('inherit'),createdAt:integer('created_at').notNull(),
+},table=>[index('idx_personality_user').on(table.userId)]);

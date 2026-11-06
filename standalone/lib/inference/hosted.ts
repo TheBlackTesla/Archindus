@@ -21,6 +21,7 @@ const schema = z.object({
   action: z.enum(["plan", "generate", "image"]),
   stream: z.boolean().optional(),
   temporary: z.boolean().optional(),
+  personalityId:z.string().uuid().optional(),
   selectedAgentId: z.string().max(30),
   objective: z.string().trim().min(1).max(16_000),
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(16_000), agentId: z.string().max(30).optional(), status: z.string().max(30).optional(), objective: z.string().max(3500).optional() })).max(40).default([]),
@@ -41,7 +42,8 @@ async function boundedJson(request: Request | Response, max: number) {
     return JSON.parse(text + decoder.decode());
   } finally { reader.releaseLock(); }
 }
-export type HostedDependencies = { key?: string; enabled: boolean; db?: UsageDb; limits: Limits; fetch?: typeof fetch; now?: () => number; modelPolicy?:ModelPolicy; personalContext?:string; personalize?:(temporary:boolean)=>Promise<{modelPolicy?:ModelPolicy;personalContext?:string}> };
+type Personalization={modelPolicy?:ModelPolicy;personalContext?:string;capability?:AgentId;personalityContext?:string};
+export type HostedDependencies = { key?: string; enabled: boolean; db?: UsageDb; limits: Limits; fetch?: typeof fetch; now?: () => number; modelPolicy?:ModelPolicy; personalContext?:string; personalize?:(temporary:boolean,personalityId?:string)=>Promise<Personalization> };
 export async function handleHosted(request: Request, deps: HostedDependencies) {
   const origin = request.headers.get("origin");
   if (origin !== new URL(request.url).origin || !request.headers.get("content-type")?.startsWith("application/json")) return json({ error: "Send this request from Archindus." }, 403);
@@ -49,20 +51,23 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
   let input;
   try { input = schema.parse(await boundedJson(request, 150_000)); }
   catch { return json({ error: "Invalid or oversized request." }, 400); }
-  let personal:{modelPolicy?:ModelPolicy;personalContext?:string}={};
-  try{if(deps.personalize)personal=await deps.personalize(input.temporary===true)}catch{return json({error:'Your personalization could not be loaded. Please retry.'},503)}
+  let personal:Personalization={};
+  if(input.personalityId&&!deps.personalize)return json({error:'Personality not found.'},404);
+  try{if(deps.personalize)personal=await deps.personalize(input.temporary===true,input.personalityId)}catch(e){return json({error:e instanceof Error&&e.name==='PersonalityNotFound'?'This personality is unavailable. Select another personality.':'Your personalization could not be loaded. Please retry.'},e instanceof Error&&e.name==='PersonalityNotFound'?404:503)}
   if (!AGENTS.some(a => a.id === input.selectedAgentId) || (input.plan && !AGENTS.some(a => a.id === input.plan!.primaryId))) return json({ error: "Unknown agent." }, 400);
   if (input.action === "image" && input.objective.length > 2400) return json({ error: "Use an image description under 2,400 characters." }, 400);
   let plan = fallbackPlan(input.objective, input.selectedAgentId as AgentId, input.history);
   if (input.plan) plan = parsePlan(JSON.stringify({ agentId: input.plan.primaryId, task: input.plan.task }), plan);
+  if(personal.capability)plan={...plan,primaryId:personal.capability};
   const planning = input.action === "plan", image = input.action === "image";
   const continuing=/^(?:continue|yes|do it|go ahead|now (?:add|change|explain)|explain (?:it|that)|make it|expand|shorten|revise)/i.test(input.objective);
   const routingObjective=continuing?`${[...input.history].reverse().find(m=>m.role==='user')?.content??''}\n${input.objective}`:input.objective;
   const model=selectTextModel(routingObjective,plan,personal.modelPolicy??deps.modelPolicy,planning);
   const outputLimit = planning ? 240 : model.reasoning==='high' ? 8000 : ["code", "document"].includes(plan.task) ? 6000 : 1800;
   const personalization=personal.personalContext??deps.personalContext;
-  const messages = [{ role: "system", content: planning ? `${PLANNER_PROMPT}\nJSON schema: ${PLAN_SCHEMA}` : `${getAgentPrompt(plan.primaryId)}\n${taskInstructions(plan)}${personalization?'\n'+personalization:''}` }, ...modelContext(input.history, input.objective, 12_000)];
-  const amount = image ? imageReservation(input.objective) : textReservation(messages, outputLimit,model);
+  const messages = [{ role: "system", content: planning ? `${PLANNER_PROMPT}\nJSON schema: ${PLAN_SCHEMA}` : `${getAgentPrompt(plan.primaryId)}\n${taskInstructions(plan)}${personalization?'\n'+personalization:''}${personal.personalityContext?'\n'+personal.personalityContext:''}` }, ...modelContext(input.history, input.objective, 12_000)];
+  const imagePrompt=input.objective+(personal.personalityContext?'\nCreative direction: '+personal.personalityContext+' Do not render instructions as text.':'');
+  const amount = image ? imageReservation(imagePrompt) : textReservation(messages, outputLimit,model);
   const now = deps.now?.() ?? Date.now();
   try {
     request.signal.throwIfAborted();
@@ -86,7 +91,7 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
     const response = await send(`https://api.openai.com/v1/${image ? "images/generations" : "chat/completions"}`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${deps.key}` },
       signal,
-      body: JSON.stringify(image ? { model: IMAGE_MODEL, prompt: input.objective, n: 1, size: "1024x1024", quality: "low", output_format: "png" } : {
+      body: JSON.stringify(image ? { model: IMAGE_MODEL, prompt: imagePrompt, n: 1, size: "1024x1024", quality: "low", output_format: "png" } : {
         model: model.id, messages, max_completion_tokens: outputLimit, reasoning_effort:model.reasoning, stream: streaming, store: false,
         ...(streaming ? { stream_options: { include_usage: true } } : {}),
         ...(planning ? { response_format: { type: "json_object" } } : {}),

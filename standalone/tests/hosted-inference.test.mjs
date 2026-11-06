@@ -328,3 +328,14 @@ test("default browser transport preserves the Window receiver on a real HostedRu
     assert.equal(answer.text,"Ready.");
   } finally { globalThis.fetch = original; }
 });
+
+test('personality requests expose actual streaming models and deleted selections never silently fall back',async()=>{
+ let sent;const id=crypto.randomUUID(),models=[];
+ const runtime=new app.HostedRuntime(async(_url,init)=>{sent=JSON.parse(init.body);return new Response(new Blob([app.encodeEvent({type:'partial',text:'A useful answer',model:'gpt-6.1-sol'}),app.encodeEvent({type:'complete',text:'A useful answer.',model:'gpt-6.1-sol'})]),{headers:{'Content-Type':'text/event-stream'}})});
+ runtime.personalityId=id;runtime.onModel=model=>models.push(model);
+ const plan=app.fallbackPlan('Explain this approach','satoshi',[]);
+ assert.equal((await runtime.request('generate','satoshi','Explain this approach',[],new AbortController().signal,plan)).model,'gpt-6.1-sol');assert.equal(sent.personalityId,id);assert.deepEqual(models,['gpt-6.1-sol','gpt-6.1-sol']);
+ const unavailable=new app.HostedRuntime(async()=>Response.json({error:'Personality removed.'},{status:404}));unavailable.personalityId=id;
+ let localCalls=0;
+ await assert.rejects(app.executeObjective('Explain a database indexing approach','satoshi',[],[],{modes:['hosted','cpu'],signal:new AbortController().signal,status:()=>{},infer:async mode=>{if(mode==='cpu'){localCalls++;return {text:'Must not run'}}return unavailable.request('generate','satoshi','Explain a database indexing approach',[],new AbortController().signal,plan)},image:async()=>new Blob()}),e=>e.name==='PersonalityUnavailable');assert.equal(localCalls,0);
+});

@@ -82,7 +82,7 @@ export async function executeObjective(input: string, selected: AgentId, history
       const invalid = validateAnswer(text, plan.task);
       if (invalid) throw new Error(invalid);
       return { text, plan, model: result.model ?? mode };
-    } catch (error) { check(); if (error instanceof Error && error.name === "HostedRefusal") throw error; failure = error instanceof Error ? error.message : "The model could not complete the task."; }
+    } catch (error) { check(); if (error instanceof Error && ["HostedRefusal","PersonalityUnavailable"].includes(error.name)) throw error; failure = error instanceof Error ? error.message : "The model could not complete the task."; }
   }
   throw new Error(failure);
 }
