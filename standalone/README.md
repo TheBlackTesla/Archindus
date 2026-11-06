@@ -128,3 +128,7 @@ The neural surface uses the original seeded 540-point (300 on mobile) dense mesh
 ### Hosted recovery
 
 Automatic processing always allows one hosted attempt for an explicit user request, even if the last availability snapshot said unavailable. Status polling is advisory; the server still authorizes every generation against credentials, cooldown, rate and spending limits. Explicit new requests/retries clear only browser-local backoff. Device-only mode continues to exclude cloud inference. HTTP/malformed status failures remain unknown, rather than becoming a false definitive outage. This prevents recovered services from being silently excluded when no local model is installed.
+
+## Multi-provider routing
+
+Archindus supports Claude, DeepSeek, Grok, OpenRouter, Ollama and compatible runtimes, with optional ComfyUI images/video. Connect keys in deployed Settings → Runtime & voice → Model connections. See [routing and availability](docs/MODEL_ROUTING.md) and [workstation setup](runtime/README.md). Only configured, reachable providers are usable; source support does not mean a live paid account or GPU has been provisioned.

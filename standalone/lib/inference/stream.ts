@@ -18,7 +18,7 @@ export function streamedCompletion(response: Response, options: {
         const answer = new AnswerStream();
         let finish = "", last = "", lastTime = 0;
         for await (const data of readEvents(response.body, options.signal)) {
-          if (data.error) throw new Error("Upstream stream failed");
+          if(data.error){const e=new Error("Upstream stream failed");if(/content_policy|moderation|safety|refusal/i.test(String(data.error.code??data.error.type??'')))e.name='HostedRefusal';throw e;}
           if (data.usage && Number.isSafeInteger(data.usage.prompt_tokens) && data.usage.prompt_tokens > 0 && Number.isSafeInteger(data.usage.completion_tokens) && data.usage.completion_tokens >= 0) {
             actual = options.rates ? textUsageCost(data.usage,options.rates) : Math.ceil(data.usage.prompt_tokens * 0.4 + data.usage.completion_tokens * 1.6);
           }

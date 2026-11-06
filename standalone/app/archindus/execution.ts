@@ -5,12 +5,13 @@ import { fallbackPlan, quickReply, type TaskPlan } from "./orchestration";
 import type { AgentId } from "./agents";
 
 export type EngineMode = "qwen" | "hosted" | "webgpu" | "cpu" | "native";
-export type ExecutionResult = { text: string; plan: TaskPlan; model: string; image?: Blob; images?: Blob[] };
+export type ExecutionResult = { text: string; plan: TaskPlan; model: string; image?: Blob; images?: Blob[]; video?:Blob };
 export type ExecutionPorts = {
   modes: EngineMode[];
   signal: AbortSignal;
   status: (text: string, plan?: TaskPlan) => void;
   infer: (mode: EngineMode, action: "plan" | "generate", plan: TaskPlan, objective: string, history: ContextMessage[]) => Promise<{ plan?: TaskPlan; text?: string; model?: string }>;
+  video?: (prompt:string)=>Promise<{video:Blob;model:string}>;
   image: (prompt: string) => Promise<Blob | { image: Blob; model: string }>;
 };
 
@@ -32,6 +33,7 @@ export async function executeObjective(input: string, selected: AgentId, history
   // Route locally and answer in one inference call. Ordinary conversation does
   // not need a separate remote classifier before the first response token.
   check(); ports.status("Preparing your result", plan);
+  if(plan.task==='video'&&ports.video){ports.status("Ounumi is preparing your video",plan);const result=await ports.video(plan.objective);check();return {plan,model:result.model,video:result.video,text:"Your video is ready. Save it before leaving this conversation."};}
   if (plan.task === "video") return { plan, model: "Archindus", text: "Video generation is not connected yet. Ounumi can write a storyboard or shot plan, but cannot produce a video file in this version. Ask for a storyboard to continue." };
   if (plan.task === "image") {
     const { imagePrompt, imageCount } = await import("./image-config");

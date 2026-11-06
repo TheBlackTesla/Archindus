@@ -26,7 +26,7 @@ const personalitySchema=z.object({nodeSlot:z.number().int().min(0).max(19).nulla
 const personalityColumns='id,node_slot AS nodeSlot,name,description,instructions,capability,model_policy AS modelPolicy,created_at AS createdAt';
 const messageSchema=z.object({id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),personalityId:uuid.optional(),personalityName:z.string().max(60).optional(),model:z.string().max(100).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
 
-export async function handleAccount(request:Request,db:AccountDb|undefined){
+export async function handleAccount(request:Request,db:AccountDb|undefined,options:{credentialsKey?:string}={}){
  const path=new URL(request.url).pathname.split('/').filter(Boolean).slice(2);
  const user=accountIdentity(request);
  if(!user)return path.length===0&&request.method==='GET'?json({authenticated:false,settings:DEFAULT_SETTINGS,memories:[]}):json({error:'Sign in to access your account.'},401);
@@ -53,12 +53,13 @@ export async function handleAccount(request:Request,db:AccountDb|undefined){
    if(request.method==='DELETE'){
     const body=await boundedAccountJson(request,1000);if(body.confirm!=='DELETE')return json({error:'Type DELETE to confirm.'},400);
     await db.batch([
-     ...['account_memories','account_conversations','account_personalities'].map(table=>db.prepare(`DELETE FROM ${table} WHERE user_id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)`).bind(user.id,user.id,profile.data_version)),
+     ...['account_memories','account_conversations','account_personalities','media_jobs','account_integrations'].map(table=>db.prepare(`DELETE FROM ${table} WHERE user_id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)`).bind(user.id,user.id,profile.data_version)),
      db.prepare('DELETE FROM account_profiles WHERE user_id=? AND data_version=?').bind(user.id,profile.data_version),
     ]);
     return json({deleted:true});
    }
   }
+  if(path[0]==='integrations'){const {handleIntegrations}=await import('./inference/integrations');return handleIntegrations(request,db,user.id,profile.data_version,path,options.credentialsKey)}
   if(path[0]==='personalities'&&path.length<=2){
    const id=path[1]?uuid.parse(path[1]):undefined;
    if(request.method==='GET'&&!id)return json({personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=? ORDER BY created_at LIMIT 20`).bind(user.id).all()).results});

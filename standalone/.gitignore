@@ -44,3 +44,9 @@ next-env.d.ts
 /work/
 
 *.tsbuildinfo
+
+# Private workstation gateway token and user workflow exports
+runtime/.gateway-token
+runtime/.env.runtime
+runtime/archindus-workflows.json
+runtime/__pycache__/

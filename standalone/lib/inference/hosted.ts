@@ -1,3 +1,5 @@
+import {routedCompletion} from './multi-router';
+import type {Provider} from './providers';
 import { z } from "zod";
 import { AGENTS, getAgentPrompt, type AgentId } from "../../app/archindus/agents";
 import { finalAnswer, formatAnswer, modelContext, validateAnswer } from "../../app/archindus/answer";
@@ -43,14 +45,15 @@ async function boundedJson(request: Request | Response, max: number) {
   } finally { reader.releaseLock(); }
 }
 type Personalization={modelPolicy?:ModelPolicy;personalContext?:string;capability?:AgentId;personalityContext?:string};
-export type HostedDependencies = { key?: string; enabled: boolean; db?: UsageDb; limits: Limits; fetch?: typeof fetch; now?: () => number; modelPolicy?:ModelPolicy; personalContext?:string; personalize?:(temporary:boolean,personalityId?:string)=>Promise<Personalization> };
+export type HostedDependencies = { providers?:Provider[];routerSecret?:string; key?: string; enabled: boolean; db?: UsageDb; limits: Limits; fetch?: typeof fetch; now?: () => number; modelPolicy?:ModelPolicy; personalContext?:string; personalize?:(temporary:boolean,personalityId?:string)=>Promise<Personalization> };
 export async function handleHosted(request: Request, deps: HostedDependencies) {
   const origin = request.headers.get("origin");
   if (origin !== new URL(request.url).origin || !request.headers.get("content-type")?.startsWith("application/json")) return json({ error: "Send this request from Archindus." }, 403);
-  if (!deps.enabled || !deps.key || !deps.db) return json({ error: "Hosted inference is unavailable. Trying local inference." }, 503);
+  if (!deps.enabled || (!deps.key&&!deps.providers?.length) || !deps.db) return json({ error: "Hosted inference is unavailable. Trying local inference." }, 503);
   let input;
   try { input = schema.parse(await boundedJson(request, 150_000)); }
   catch { return json({ error: "Invalid or oversized request." }, 400); }
+  if(input.action==='image'&&!deps.key)return json({error:'The hosted image provider is not connected.'},503);
   let personal:Personalization={};
   if(input.personalityId&&!deps.personalize)return json({error:'Personality not found.'},404);
   try{if(deps.personalize)personal=await deps.personalize(input.temporary===true,input.personalityId)}catch(e){return json({error:e instanceof Error&&e.name==='PersonalityNotFound'?'This personality is unavailable. Select another personality.':'Your personalization could not be loaded. Please retry.'},e instanceof Error&&e.name==='PersonalityNotFound'?404:503)}
@@ -66,12 +69,13 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
   const outputLimit = planning ? 240 : model.reasoning==='high' ? 8000 : ["code", "document"].includes(plan.task) ? 6000 : 1800;
   const personalization=personal.personalContext??deps.personalContext;
   const messages = [{ role: "system", content: planning ? `${PLANNER_PROMPT}\nJSON schema: ${PLAN_SCHEMA}` : `${getAgentPrompt(plan.primaryId)}\n${taskInstructions(plan)}${personalization?'\n'+personalization:''}${personal.personalityContext?'\n'+personal.personalityContext:''}` }, ...modelContext(input.history, input.objective, 12_000)];
+  if(!image&&deps.providers?.length)return routedCompletion({request,id:input.requestId,plan,objective:routingObjective,messages,stream:input.stream===true&&!planning,planning,policy:personal.modelPolicy??deps.modelPolicy,providers:deps.providers,routerSecret:deps.routerSecret,openAIKey:deps.key,openAIModel:model,db:deps.db,limits:deps.limits,send:deps.fetch??fetch.bind(globalThis),now:deps.now??Date.now});
   const imagePrompt=input.objective+(personal.personalityContext?'\nCreative direction: '+personal.personalityContext+' Do not render instructions as text.':'');
   const amount = image ? imageReservation(imagePrompt) : textReservation(messages, outputLimit,model);
   const now = deps.now?.() ?? Date.now();
   try {
     request.signal.throwIfAborted();
-    const client = await clientKey(request, deps.key, new Date(now).toISOString().slice(0, 10));
+    const client = await clientKey(request, deps.key!, new Date(now).toISOString().slice(0, 10));
     if (!await reserve(deps.db, { id: input.requestId, client, kind: image ? "image" : "text", amount, now, limits: deps.limits })) {
       // reserve checks cooldown atomically; explain a rejection only on failure.
     const retryAfter = await providerCooldownSeconds(deps.db, now);

@@ -50,3 +50,11 @@ export const accountPersonalities=sqliteTable('account_personalities',{
 export const voiceUsage=sqliteTable('voice_usage',{
  id:text('id').primaryKey(),userId:text('user_id').notNull(),day:text('day').notNull(),month:text('month').notNull(),characters:integer('characters').notNull(),createdAt:integer('created_at').notNull(),activeUntil:integer('active_until').notNull(),
 },table=>[index('idx_voice_day').on(table.day),index('idx_voice_month').on(table.month),index('idx_voice_user_created').on(table.userId,table.createdAt)]);
+
+export const mediaJobs=sqliteTable('media_jobs',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),remoteId:text('remote_id').notNull(),kind:text('kind').notNull(),model:text('model').notNull(),width:integer('width').notNull(),status:text('status').notNull(),reservationId:text('reservation_id').notNull(),createdAt:integer('created_at').notNull(),expiresAt:integer('expires_at').notNull(),artifactJson:text('artifact_json').notNull().default(''),
+},table=>[index('idx_media_user_created').on(table.userId,table.createdAt)]);
+
+export const accountIntegrations=sqliteTable('account_integrations',{
+ userId:text('user_id').notNull(),provider:text('provider').notNull(),dataVersion:text('data_version').notNull(),label:text('label').notNull(),endpointHint:text('endpoint_hint').notNull().default(''),encryptedValue:text('encrypted_value').notNull(),updatedAt:integer('updated_at').notNull(),
+},table=>[uniqueIndex('idx_integrations_user_provider').on(table.userId,table.provider)]);

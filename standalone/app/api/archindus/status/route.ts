@@ -1,3 +1,4 @@
+import {environmentForRequest} from '../../../../lib/inference/user-environment';
 const STATUS_TIMEOUT_MS = 2_500;
 
 function qwenUrl(path: string) {
@@ -11,12 +12,12 @@ function qwenHeaders() {
   return apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
 }
 
-export async function GET() {
-  const environment = hostedEnvironment();
-  const hostedConfigured = Boolean(environment.enabled && environment.key && environment.db);
+export async function GET(request:Request) {
+  const environment = await environmentForRequest(request);
+  const hostedConfigured = Boolean(environment.enabled && (environment.key||environment.providers.length) && environment.db);
   let hostedAvailable = false;
   if (hostedConfigured) {
-    try { hostedAvailable = await budgetAvailable(environment.db!, environment.limits); }
+    try { for(const provider of [...(environment.key?['openai']:[]),...environment.providers.map(p=>p.id)])if(await budgetAvailable(environment.db!,environment.limits,Date.now(),provider)){hostedAvailable=true;break;} }
     catch { /* Missing/unavailable cost ledger disables paid calls. */ }
   }
   const hosted = { configured: hostedConfigured, available: hostedAvailable };

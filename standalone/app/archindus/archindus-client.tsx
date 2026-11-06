@@ -20,6 +20,9 @@ import { HostedRuntime, imageWithFallback } from "./hosted-runtime";
 import { ArrowUp, Check, ChevronLeft, ChevronRight, Copy, History, Paperclip, Plus, RotateCcw, Settings2, Square, Terminal, Network, Braces, Volume2, VolumeX, Waves, X } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import type {PublicModel} from '../../lib/inference/providers';
+import {ProviderConnections} from './provider-connections';
+import {generateWorkerMedia} from './media-runtime';
 import {RoutingBrain} from "./routing-brain";
 import {personalityContext,restorePersonalitySelection} from "./personalities";
 import { MediaGallery, type MediaArtifact } from "./media-gallery";
@@ -68,6 +71,7 @@ export default function ArchindusClient() {
   const [imageDeviceIssue, setImageDeviceIssue] = useState<string | null>(null);
   const [qwenOnline, setQwenOnline] = useState(false);
   const [qwenConfigured, setQwenConfigured] = useState(false);
+  const [providerModels,setProviderModels]=useState<PublicModel[]>([]);
   const [hostedAvailable, setHostedAvailable] = useState<boolean|null>(null);
   const [native, setNative] = useState(false);
   const [models, setModels] = useState<DeviceModel[]>([]);
@@ -183,6 +187,8 @@ export default function ArchindusClient() {
     const area = inputRef.current;
     if (area) { area.style.height = "auto"; area.style.height = `${Math.min(area.scrollHeight, 132)}px`; }
   }, [input]);
+
+  useEffect(()=>{const controller=new AbortController();void fetch('/api/archindus/providers',{signal:controller.signal,cache:'no-store'}).then(r=>r.ok?r.json():null).then(value=>{if(!controller.signal.aborted&&Array.isArray(value?.models))setProviderModels(value.models)}).catch(()=>{});return()=>controller.abort()},[]);
 
   useEffect(() => {
     let active = true;
@@ -328,7 +334,9 @@ export default function ArchindusClient() {
           setProgressText("Opening saved model files");
           return runtime.current!.request(mode, action, plan, context, prompt, abort.signal, onPartial);
         },
-        image: async prompt => imageWithFallback(!deviceOnly ? async () => {
+        video:async prompt=>{if(deviceOnly)throw Error('Video generation requires a connected GPU workflow in Automatic mode.');beginAttempt('ComfyUI · video');const result=await generateWorkerMedia('video',prompt,{version:account?.user?.version,personalityId,signal:abort.signal,status:setProgressText,onModel:model=>patch(id,{model})});return {video:result.blob,model:result.model}},
+        image:async prompt=>{if(!deviceOnly&&account?.authenticated&&providerModels.some(m=>m.kind==='image'&&m.configured&&m.provider==='comfyui')){beginAttempt('ComfyUI · image');try{const result=await generateWorkerMedia('image',prompt,{version:account.user?.version,personalityId,signal:abort.signal,status:setProgressText,onModel:model=>patch(id,{model})});return {image:result.blob,model:result.model}}catch(e){if(!(e instanceof Error)||e.name!=='MediaUnavailable')throw e}}
+        return imageWithFallback(!deviceOnly ? async () => {
           beginAttempt("Hosted image API"); setProgressText("Ounumi is generating your image");
           const result = await hostedRuntime.current!.request("image", "ounumi", prompt, [], abort.signal);
           if (!("image" in result) || !result.image) throw new Error("No image was returned.");
@@ -344,13 +352,13 @@ export default function ArchindusClient() {
           const allowed=deviceOnly&&mayFetchImage&&!usedImagePermission;
           if(allowed){usedImagePermission=true;setMayFetchImage(false);}
           const image=await imageRuntime.current.generate(prompt,abort.signal,allowed);setImageFiles(true);return image;
-        }, abort.signal),
+        }, abort.signal)},
       });
       if (!result.images?.length) abort.signal.throwIfAborted();
-      const generated = result.images ?? (result.image ? [result.image] : []);
+      const generated = result.video?[result.video]:result.images ?? (result.image ? [result.image] : []);
       const media: MediaArtifact[] = generated.map((blob, index) => {
         const url = URL.createObjectURL(blob); imageUrls.current.add(url);
-        return { id: `${id}-${index}`, url, kind: "image", name: `ounumi-${id.slice(0, 8)}-${index + 1}.png`, prompt: result.plan.objective };
+        return { id: `${id}-${index}`, url, kind: result.video?"video":"image", name: `ounumi-${id.slice(0, 8)}-${index + 1}.${result.video?"mp4":"png"}`, prompt: result.plan.objective };
       });
       const imageUrl = media[0]?.url;
       const last=attempts.at(-1); if(last)last.state="completed";
@@ -469,7 +477,9 @@ export default function ArchindusClient() {
                 {retainedStorage?<p>Persistent browser storage granted.</p>:null}
               </section>
               {deviceOnly?<section><div className="oracle-switch-row"><label htmlFor="oracle-image-download">Allow next image download</label><Switch id="oracle-image-download" checked={mayFetchImage} disabled={isGenerating||!!imageDeviceIssue||catalog!=="checked"} onCheckedChange={setMayFetchImage}/></div><p>Enable once to fetch missing image weights (several GB on first use). Local images need a compatible GPU.</p></section>:null}
-              <details className="oracle-system-details"><summary>Runtime inventory</summary><dl><dt>Hosted service</dt><dd>{deviceOnly?"Off for this chat":hostedAvailable===null?"Not yet confirmed":hostedAvailable?"Available within limits":"Unavailable"}</dd><dt>Private server</dt><dd>{qwenOnline?"Online":qwenConfigured?"Offline":"Not connected"}</dd><dt>Built-in browser AI</dt><dd>{native?"Installed and available":"Not available"}</dd><dt>Browser GPU</dt><dd>{gpuAvailable?"Available":gpuAvailable===null?"Checking":"Unavailable"}</dd><dt>Saved text models</dt><dd>{models.length?models.map(m=>m.label).join(", "):catalog==="checked"?"None detected":catalog}</dd><dt>Video generation</dt><dd>Not connected</dd></dl></details>
+              <details className="oracle-system-details"><summary>Runtime inventory</summary><dl><dt>Hosted service</dt><dd>{deviceOnly?"Off for this chat":hostedAvailable===null?"Not yet confirmed":hostedAvailable?"Available within limits":"Unavailable"}</dd><dt>Private server</dt><dd>{qwenOnline?"Online":qwenConfigured?"Offline":"Not connected"}</dd><dt>Built-in browser AI</dt><dd>{native?"Installed and available":"Not available"}</dd><dt>Browser GPU</dt><dd>{gpuAvailable?"Available":gpuAvailable===null?"Checking":"Unavailable"}</dd><dt>Saved text models</dt><dd>{models.length?models.map(m=>m.label).join(", "):catalog==="checked"?"None detected":catalog}</dd><dt>GPU media workflows</dt><dd>{providerModels.filter(m=>m.configured&&m.provider==='comfyui').length||"None connected"}</dd></dl></details>
+              <ProviderConnections account={account} onRefresh={()=>{void fetch('/api/archindus/providers',{cache:'no-store'}).then(r=>r.json()).then(value=>{if(Array.isArray(value.models))setProviderModels(value.models)}).catch(()=>{})}}/>
+              <details className="oracle-system-details"><summary>Connected providers &amp; model library</summary><p>Engines become routable when their server credentials or GPU endpoint are configured. Self-hosted models avoid per-token API fees; hardware and hosting still cost money.</p><div className="oracle-provider-list">{providerModels.map(m=><div key={m.id}><strong>{m.name}</strong><small>{m.providerName} · {m.kind} · {m.configured?'Configured':'Setup required'}{m.architecture?' · '+m.architecture:''}</small><small>{m.state}{m.license?' · '+m.license:''}</small></div>)}</div><p>Image/video workflows use models already installed on a connected ComfyUI worker. Chat does not download model weights.</p></details>
               <p>File parsing and document exports run on your device. Signed-in text history can sync to your account when enabled. Save generated media before refreshing or starting a new conversation.</p>
             </div>
             </AccountSettings>
@@ -479,7 +489,7 @@ export default function ArchindusClient() {
     </header>
 
     <div className="oracle-stage">
-      <RoutingBrain expanded={brainExpanded} onExpandedChange={setBrainExpanded} state={oracleState} activity={neuralActivity} run={activeMessage??undefined} runs={answers} runtime={{privateOnline:qwenOnline,native,localModels:usable.map(m=>({id:m.id,label:m.label}))}} selectedAgentId={selectedAgentId} selectedPersonalityId={selectedPersonalityId} onSelect={(a,p)=>{setSelectedAgentId(a);setSelectedPersonalityId(p)}} account={account} refreshAccount={accountState.refresh} deviceOnly={deviceOnly} hostedAvailable={hostedAvailable} busy={isGenerating}/>
+      <RoutingBrain expanded={brainExpanded} onExpandedChange={setBrainExpanded} state={oracleState} activity={neuralActivity} run={activeMessage??undefined} runs={answers} runtime={{openAIConfigured:providerModels.find(m=>m.provider==='openai')?.configured,extraModels:providerModels.filter(m=>m.provider!=='openai'),privateOnline:qwenOnline,native,localModels:usable.map(m=>({id:m.id,label:m.label}))}} selectedAgentId={selectedAgentId} selectedPersonalityId={selectedPersonalityId} onSelect={(a,p)=>{setSelectedAgentId(a);setSelectedPersonalityId(p)}} account={account} refreshAccount={accountState.refresh} deviceOnly={deviceOnly} hostedAvailable={hostedAvailable} busy={isGenerating}/>
       {!brainExpanded && !activeMessage && !galleryOpen ? <div className="oracle-presence"><span>ARCHITECT INDUSTRIES / ARCHINDUS</span><h1>What do you want to accomplish?</h1></div> : null}
     </div>
 
@@ -492,7 +502,7 @@ export default function ArchindusClient() {
           <div className="oracle-working" role="status"><span className="oracle-working-light" /><span>{activeMessage.content ? "Responding…" : progressText}{!activeMessage.content && progress > 0 && progress < 100 ? ` · ${Math.round(progress)}%` : ""}</span></div>
         </> : <>
           <div className={`oracle-answer-content ${activeMessage.status === "error" || activeMessage.status === "stopped" ? "oracle-answer-error" : ""}`} role="status" aria-live="polite"><RichResponse content={finalAnswer(activeMessage.content)} /></div>
-          {activeMessage.media?.length ? <MediaGallery items={activeMessage.media} /> : activeMessage.imageUrl ? <MediaGallery items={[{ id: activeMessage.id, url: activeMessage.imageUrl, kind: "image", name: "ounumi-image.png", prompt: activeMessage.objective ?? activePrompt }]} /> : activeMessage.hadImage ? <p className="oracle-notice">This image belonged to an earlier session. Use your saved file or regenerate it.</p> : null}
+          {activeMessage.media?.length ? <MediaGallery items={activeMessage.media} /> : activeMessage.imageUrl ? <MediaGallery items={[{ id: activeMessage.id, url: activeMessage.imageUrl, kind: "image", name: "ounumi-image.png", prompt: activeMessage.objective ?? activePrompt }]} /> : activeMessage.hadImage ? <p className="oracle-notice">This media belonged to an earlier session. Use your saved file or regenerate it.</p> : null}
           <div className="oracle-answer-actions"><button type="button" aria-label="Copy response" onClick={() => void copy(activeMessage)}>{copied === activeMessage.id ? <Check size={15} /> : <Copy size={15} />}{copied === activeMessage.id ? "Copied" : "Copy"}</button>
             {voice.enabled && activeMessage.status === "complete" ? <button type="button" onClick={() => (voice.speaking||voice.preparing) ? voice.stop() : voice.speak(activeMessage.content)}>{voice.speaking ? <Square size={14} /> : <Volume2 size={16} />}{voice.preparing?"Stop voice setup":voice.speaking ? "Stop voice" : "Listen"}</button> : null}
             {activeIndex === answers.length - 1 ? <button type="button" disabled={isGenerating || uploading} onClick={() => void executePrompt(activeMessage.sourceText ?? "", activeMessage.id)}><RotateCcw size={15} />{activeMessage.status === "error" || activeMessage.status === "stopped" ? "Retry" : "Regenerate"}</button> : null}
