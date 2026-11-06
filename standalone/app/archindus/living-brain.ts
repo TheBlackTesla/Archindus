@@ -50,6 +50,6 @@ export function neuralLinks(nodes:NeuralEntity[],path:string[]=[]):[string,strin
 }
 export function projectNeuron(position:{x:number;y:number;z:number},yaw:number,pitch:number,width:number,height:number,zoom=1,expansion=1){
  const cy=Math.cos(yaw),sy=Math.sin(yaw),ct=Math.cos(pitch),st=Math.sin(pitch),x=position.x*cy-position.z*sy,z=position.x*sy+position.z*cy,y=position.y*ct-z*st,depth=position.y*st+z*ct;
- const perspective=3.8/(3.8-depth),radius=Math.min(width*.35,height*.37)*zoom*(.84+.16*expansion);
+ const perspective=3.8/(3.8-depth),radius=Math.min(width*.4,height*.43)*zoom*(.84+.16*expansion);
  return {x:width/2+x*radius*perspective,y:height/2+y*radius*perspective,depth,scale:perspective,opacity:.38+.62*(depth+1.2)/2.4};
 }

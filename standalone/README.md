@@ -122,3 +122,5 @@ Voice starts off unless a user enabled it earlier. When enabled in Automatic mod
 ### Browser voice preference
 
 Browser speech now prefers recognized female English voices from South Africa, then Europe (including UK and Ireland), before other available voices. This uses provider labels and a small known-name list because Web Speech exposes no gender field; it is a preference, not a guaranteed gender detector. Settings → Runtime & voice shows the selected name/locale and allows an explicit, per-device choice. Voice lists refresh on `voiceschanged`, with a bounded initial wait, and pending speech cannot start after cancellation. Device-only processing filters out remote browser voices before matching or honoring an explicit selection. No voice is downloaded by this change.
+
+The neural surface uses the original seeded 540-point (300 on mobile) dense mesh and cyan glow, with the semantic model/personality controls retained above it. Mesh junctions are visual structure; routing highlights still come from observed requests. The default brain and its stage are larger before zoom, with chat positioned below the reserved space.

@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useRef,type RefObject,type ReactNode} from 'react';
+import {nearestGraph,type Point} from './neural-topology';
 import {neuralLinks,projectNeuron,type NeuralEntity} from './living-brain';
 type Props={expanded:boolean;nodes:NeuralEntity[];path:string[];running:boolean;selected?:string;onInspect:(id:string)=>void;onExpand:()=>void;zoom:number;reset:number;activity:RefObject<number>;children?:ReactNode};
 export function NeuralRouter(p:Props){
@@ -9,6 +10,13 @@ export function NeuralRouter(p:Props){
  useEffect(()=>{
   const el=field.current,c=canvas.current,ctx=c?.getContext('2d');if(!el||!c||!ctx)return;
   let width=800,height=600,frame=0,last=0,expansion=0,previousActivity=0,energy=0;
+  // Restore the original dense neural surface as visual texture. Semantic
+  // buttons above it remain the actual model/personality nodes; only real
+  // request events illuminate the surface, never invented background work.
+  let seed=21731;const random=()=>{seed=seed*16807%2147483647;return(seed-1)/2147483646};
+  const count=window.innerWidth<640?300:540;
+  const mesh:Point[]=Array.from({length:count},(_,i)=>{const y=1-2*((i+.5)/count),angle=i*Math.PI*(3-Math.sqrt(5)),ring=Math.sqrt(1-y*y),radius=.63+random()*.37;return {x:Math.cos(angle)*ring*radius*(1+.07*Math.sin(angle*3+y*5)),y:y*radius,z:Math.sin(angle)*ring*radius,size:.5+random()*1.15}});
+  const topology=nearestGraph(mesh),charge=new Float32Array(count);let previousPath='';
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   const resize=()=>{const rect=el.getBoundingClientRect();width=rect.width;height=rect.height;const dpr=Math.min(window.devicePixelRatio||1,1.5);c.width=Math.round(width*dpr);c.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)};
   const observer=new ResizeObserver(resize);observer.observe(el);resize();
@@ -22,6 +30,13 @@ export function NeuralRouter(p:Props){
    ctx.clearRect(0,0,width,height);
    const radius=Math.min(width,height)*.45;const aura=ctx.createRadialGradient(width/2,height/2,0,width/2,height/2,radius);
    aura.addColorStop(0,`rgba(77,158,199,${.055+(s.running?energy*.035:0)})`);aura.addColorStop(.65,'rgba(42,108,146,.023)');aura.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=aura;ctx.fillRect(0,0,width,height);
+   const signature=s.path.join('>');
+   if((energy>.9||signature!==previousPath)&&s.path.length){
+    for(const id of s.path){const entity=s.nodes.find(n=>n.id===id);if(!entity)continue;let nearest=0,distance=Infinity;for(let i=0;i<mesh.length;i++){const q=mesh[i],d=Math.hypot(q.x-entity.position.x,q.y-entity.position.y,q.z-entity.position.z);if(d<distance){nearest=i;distance=d}}charge[nearest]=1;for(const i of topology.neighbors[nearest])charge[i]=Math.max(charge[i],.55)}
+   }previousPath=signature;
+   const surface=mesh.map((n,i)=>{charge[i]*=Math.exp(-dt*2.5);return {...projectNeuron(n,yaw,pitch,width,height,s.zoom,expansion),size:n.size,light:motion.matches?0:charge[i]}});
+   for(const [a,b] of topology.edges){const u=surface[a],v=surface[b],front=Math.max(.05,((u.depth+v.depth)/2+1)/2),light=Math.min(u.light,v.light);ctx.strokeStyle=`rgba(${light>.2?'144,222,255':'136,180,204'},${.07+front*.26+light*.48})`;ctx.lineWidth=.65+light*.75;ctx.beginPath();ctx.moveTo(u.x,u.y);ctx.lineTo(v.x,v.y);ctx.stroke()}
+   for(const at of surface){const front=Math.max(.1,(at.depth+1.1)/2.2),light=at.light;if(light>.15){const halo=ctx.createRadialGradient(at.x,at.y,0,at.x,at.y,8+light*5);halo.addColorStop(0,`rgba(114,209,255,${light*front*.55})`);halo.addColorStop(1,'rgba(100,200,255,0)');ctx.fillStyle=halo;ctx.beginPath();ctx.arc(at.x,at.y,8+light*5,0,Math.PI*2);ctx.fill()}ctx.fillStyle=`rgba(${light>.3?'224,249,255':'166,208,230'},${Math.min(1,.15+front*.7+light*.5)})`;ctx.beginPath();ctx.arc(at.x,at.y,Math.max(.4,at.size*at.scale*(.5+front*.65)+light*.85),0,Math.PI*2);ctx.fill()}
    const links=neuralLinks(s.nodes,s.path),active=new Set(s.path.slice(1).map((id,i)=>s.path[i]+'>'+id));
    for(const [a,b] of links){const u=projected.get(a)!,v=projected.get(b)!,lit=active.has(a+'>'+b)||active.has(b+'>'+a),related=hover.current===a||hover.current===b||s.selected===a||s.selected===b;
     const depth=Math.max(.1,((u.depth+v.depth)/2+1.1)/2.2);ctx.strokeStyle=lit?`rgba(164,229,255,${.7+energy*.25})`:related?'rgba(130,196,220,.3)':`rgba(103,162,193,${.07+depth*.25})`;ctx.lineWidth=lit?1.45:related?.8:.5;
