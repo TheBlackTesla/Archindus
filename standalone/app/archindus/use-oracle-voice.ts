@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {preferredBrowserVoice,matchesPreferredVoice,loadBrowserVoices} from './browser-voices';
 import {VoicePlayback} from './voice-playback';
 import {VOICE_TEXT_LIMIT} from './voice-config';
 import { finalAnswer } from "./answer";
@@ -15,6 +16,8 @@ export function speechText(content: string) {
 }
 
 export function useOracleVoice(deviceOnly: boolean, activity?: RefObject<number>) {
+  const [voices,setVoices]=useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI,setSelectedVoiceURI]=useState('');
   const [remoteConfigured,setRemoteConfigured]=useState<boolean|null>(null);
   const player=useRef<VoicePlayback|null>(null);
   const [preparing,setPreparing]=useState(false);
@@ -26,6 +29,8 @@ export function useOracleVoice(deviceOnly: boolean, activity?: RefObject<number>
   const generation = useRef(0);
   // Some engines collect an utterance unless the application retains it.
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  useEffect(()=>{const synth=window.speechSynthesis;if(!synth)return;const update=()=>setVoices(synth.getVoices());update();synth.addEventListener('voiceschanged',update);try{setSelectedVoiceURI(localStorage.getItem('archindus-browser-voice')??'')}catch{}return()=>synth.removeEventListener('voiceschanged',update)},[]);
 
   useEffect(()=>{const controller=new AbortController();void fetch('/api/archindus/voice',{signal:controller.signal}).then(r=>r.ok?r.json():null).then(data=>{if(!controller.signal.aborted)setRemoteConfigured(data?.configured===true)}).catch(()=>{if(!controller.signal.aborted)setRemoteConfigured(false)});return()=>controller.abort()},[]);
 
@@ -65,19 +70,21 @@ export function useOracleVoice(deviceOnly: boolean, activity?: RefObject<number>
     }
     if(!('speechSynthesis' in window)&&!('SpeechSynthesisUtterance' in window)){setError('A local browser voice is unavailable. Connect ElevenLabs to use the main Archindus voice.');return;}
     if(!window.speechSynthesis||!window.SpeechSynthesisUtterance){setError('A browser voice is unavailable.');return;}
-    const voices = window.speechSynthesis.getVoices();
-    const eligible = deviceOnly ? voices.filter(voice => voice.localService) : voices;
-    if (deviceOnly && !eligible.length) { setError("A local voice is unavailable on this device. Your response is shown as text."); return; }
-    const preferred = eligible.find(voice => voice.localService && /^en/i.test(voice.lang)) ?? eligible.find(voice => /^en/i.test(voice.lang)) ?? eligible[0];
-    const chunks = text.match(/.{1,220}(?:[.!?]\s|\s|$)|.{1,220}/g) ?? [text];
     const token = generation.current;
-    setError("");
+    setError('');setPreparing(true);
+    void loadBrowserVoices(window.speechSynthesis).then(available=>{
+    if(token!==generation.current||!enabledRef.current)return;
+    setVoices(available);setPreparing(false);
+    const preferred=preferredBrowserVoice(available,deviceOnly,selectedVoiceURI);
+    if(deviceOnly&&!preferred){setError('A local voice is unavailable on this device. Your response is shown as text.');return;}
+    if(!preferred){setError('Browser voices are still loading. Tap Listen to try again.');return;}
+    const chunks = text.match(/.{1,220}(?:[.!?]\s|\s|$)|.{1,220}/g) ?? [text];
     const next = (index: number) => {
       if (token !== generation.current || !enabledRef.current) return;
       if (index >= chunks.length) { setSpeaking(false); utteranceRef.current = null; return; }
       const utterance = new SpeechSynthesisUtterance(chunks[index]);
       utteranceRef.current = utterance;
-      if (preferred) utterance.voice = preferred;
+      utterance.voice = preferred;utterance.lang=preferred.lang;
       utterance.rate = 1.02;
       utterance.onstart = () => { if (token === generation.current) { setSpeaking(true); if (activity) activity.current++; } };
       utterance.onboundary = () => { if (token === generation.current && activity) activity.current++; };
@@ -90,7 +97,11 @@ export function useOracleVoice(deviceOnly: boolean, activity?: RefObject<number>
       window.speechSynthesis.speak(utterance);
     };
     next(0);
-  }, [deviceOnly, remoteConfigured, stop, supported, activity]);
+    }).catch(()=>{if(token===generation.current){setPreparing(false);setError('Browser voices could not load. Tap Listen to try again.')}});
+  }, [deviceOnly, remoteConfigured, selectedVoiceURI, stop, supported, activity]);
 
-  return { enabled, supported, speaking, preparing, remoteConfigured, error, toggle, speak, stop };
+  const chooseVoice=(uri:string)=>{stop();setSelectedVoiceURI(uri);try{localStorage.setItem('archindus-browser-voice',uri)}catch{}};
+  const browserVoice=preferredBrowserVoice(voices,deviceOnly,selectedVoiceURI);
+  const voiceOptions=voices.filter(v=>!deviceOnly||v.localService);
+  return { browserVoice,voiceOptions,selectedVoiceURI,chooseVoice,preferredVoiceAvailable:matchesPreferredVoice(browserVoice),enabled, supported, speaking, preparing, remoteConfigured, error, toggle, speak, stop };
 }
