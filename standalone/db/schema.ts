@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // One shared cooldown survives Worker restarts and applies to every visitor.
 export const inferenceProviderState = sqliteTable("inference_provider_state", {
@@ -42,8 +42,8 @@ export const accountConversations = sqliteTable('account_conversations', {
 },table=>[index('idx_conversation_user_updated').on(table.userId,table.updatedAt)]);
 
 export const accountPersonalities=sqliteTable('account_personalities',{
- id:text('id').primaryKey(),userId:text('user_id').notNull(),name:text('name').notNull(),description:text('description').notNull(),instructions:text('instructions').notNull(),capability:text('capability').notNull(),modelPolicy:text('model_policy').notNull().default('inherit'),createdAt:integer('created_at').notNull(),
-},table=>[index('idx_personality_user').on(table.userId)]);
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),nodeSlot:integer('node_slot'),name:text('name').notNull(),description:text('description').notNull(),instructions:text('instructions').notNull(),capability:text('capability').notNull(),modelPolicy:text('model_policy').notNull().default('inherit'),createdAt:integer('created_at').notNull(),
+},table=>[index('idx_personality_user').on(table.userId),uniqueIndex('idx_personality_user_slot').on(table.userId,table.nodeSlot)]);
 
 // Speech text/audio is never stored in the quota ledger. Failed/ambiguous calls
 // retain their character reservation to keep possible provider charges bounded.

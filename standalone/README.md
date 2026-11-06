@@ -101,11 +101,13 @@ This frontend runtime is isolated in `standalone/` within GitHub and does not
 replace the repository's full Archindus backend. Archindus.AI and Archindus.App
 have not been reassigned.
 
-## Interactive intelligence map
+## Living neural brain
 
-Click the neural brain to expand a routing workbench above the conversation. Scroll to zoom, drag to pan, or use keyboard arrows and +/- (0 resets). Select nodes or use the node picker to inspect specialists and model tiers. The highlighted path comes from the current/last request metadata, not hidden model reasoning. Architecture lines illustrate possible stages and do not assert that every provider is online.
+The same neural volume stays mounted when expanded. Each point is a personality, an execution engine (or local tool runtime), a router, or one of 20 empty personality slots. Drag rotates the volume, scroll/controls zoom, and the keyboard-accessible finder selects any point. Details float beside the selected node instead of replacing the brain with a diagram or sidebar layout.
 
-Signed-in users can create, edit, select, and delete up to 20 private AI personalities. Each has a name, specialty, instructions, base capability, and economy/quality/inherited model policy. These are specializations of Archindus, not separately trained models or new tool permissions. Hosted inference loads definitions by authenticated owner and ID, enforces server budgets, and rejects missing or foreign personalities. Explicitly selected personality instructions still apply in temporary chats; saved memories and global custom instructions do not. Personalities are included in data export and account deletion. Apply the appended Drizzle migration with the rest of the deployment migrations.
+Personality nodes expose their actual base instructions, custom instructions, policy, usual text tier and last observed model from conversation metadata. Model nodes expose IDs, capability tiers, readiness and observed usage. Typical tiers are labeled separately from models actually used. Only reported requests illuminate a route; idle rotation shows structure without fabricated model activity. A model shared by multiple personalities remains one engine node.
+
+Signed-in users can claim an empty node to create a private AI personality. The clicked slot is persisted per account, remains fixed on edits and is freed on deletion. The appended migration assigns existing personalities unique slots without losing their instructions. Atomic slot claims and the 20-personality cap prevent duplicate occupancy. Personalities remain specializations of Archindus, not separately trained models or new permissions. Temporary chats still honor explicitly selected personality instructions while excluding saved memories and global instructions. Existing export, deletion, budget and ownership controls apply.
 
 ## Main ElevenLabs voice
 

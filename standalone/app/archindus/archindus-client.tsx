@@ -477,7 +477,7 @@ export default function ArchindusClient() {
     </header>
 
     <div className="oracle-stage">
-      <RoutingBrain expanded={brainExpanded} onExpandedChange={setBrainExpanded} state={oracleState} activity={neuralActivity} run={activeMessage??undefined} selectedAgentId={selectedAgentId} selectedPersonalityId={selectedPersonalityId} onSelect={(a,p)=>{setSelectedAgentId(a);setSelectedPersonalityId(p)}} account={account} refreshAccount={accountState.refresh} deviceOnly={deviceOnly} hostedAvailable={hostedAvailable} busy={isGenerating}/>
+      <RoutingBrain expanded={brainExpanded} onExpandedChange={setBrainExpanded} state={oracleState} activity={neuralActivity} run={activeMessage??undefined} runs={answers} runtime={{privateOnline:qwenOnline,native,localModels:usable.map(m=>({id:m.id,label:m.label}))}} selectedAgentId={selectedAgentId} selectedPersonalityId={selectedPersonalityId} onSelect={(a,p)=>{setSelectedAgentId(a);setSelectedPersonalityId(p)}} account={account} refreshAccount={accountState.refresh} deviceOnly={deviceOnly} hostedAvailable={hostedAvailable} busy={isGenerating}/>
       {!brainExpanded && !activeMessage && !galleryOpen ? <div className="oracle-presence"><span>ARCHITECT INDUSTRIES / ARCHINDUS</span><h1>What do you want to accomplish?</h1></div> : null}
     </div>
 

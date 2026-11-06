@@ -1,5 +1,5 @@
 import {canonicalAgentId,type AgentId} from './agents';
-export type Personality={id:string;name:string;description:string;instructions:string;capability:AgentId;modelPolicy:'inherit'|'economy'|'quality';createdAt?:number};
+export type Personality={id:string;name:string;description:string;instructions:string;capability:AgentId;modelPolicy:'inherit'|'economy'|'quality';nodeSlot?:number|null;createdAt?:number};
 export type PersonalityDraft=Omit<Personality,'id'|'createdAt'>;
 export const PERSONALITY_CAPABILITIES=['architect','satoshi','datadoc','ounumi','socrates','wolf'] as const;
 export function restorePersonalitySelection(messages:{role:string;personalityId?:string;selectedAgentId?:string}[],personalities:Personality[]){

@@ -22,8 +22,8 @@ type ProfileRow={data_version:string;display_name:string;instructions:string;mem
 const settings=(p:ProfileRow)=>({displayName:p.display_name,instructions:p.instructions,memoryEnabled:!!p.memory_enabled,historyEnabled:!!p.history_enabled,modelPolicy:p.model_policy});
 const profileSchema=z.object({displayName:z.string().trim().max(120),instructions:z.string().max(3000),memoryEnabled:z.boolean(),historyEnabled:z.boolean(),modelPolicy:z.enum(['auto','economy','quality'])}).strict();
 const uuid=z.string().uuid();
-const personalitySchema=z.object({name:z.string().trim().min(1).max(60),description:z.string().trim().min(1).max(180),instructions:z.string().trim().min(1).max(2400),capability:z.enum(PERSONALITY_CAPABILITIES),modelPolicy:z.enum(['inherit','economy','quality'])}).strict();
-const personalityColumns='id,name,description,instructions,capability,model_policy AS modelPolicy,created_at AS createdAt';
+const personalitySchema=z.object({nodeSlot:z.number().int().min(0).max(19).nullable().optional(),name:z.string().trim().min(1).max(60),description:z.string().trim().min(1).max(180),instructions:z.string().trim().min(1).max(2400),capability:z.enum(PERSONALITY_CAPABILITIES),modelPolicy:z.enum(['inherit','economy','quality'])}).strict();
+const personalityColumns='id,node_slot AS nodeSlot,name,description,instructions,capability,model_policy AS modelPolicy,created_at AS createdAt';
 const messageSchema=z.object({id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),personalityId:uuid.optional(),personalityName:z.string().max(60).optional(),model:z.string().max(100).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
 
 export async function handleAccount(request:Request,db:AccountDb|undefined){
@@ -64,13 +64,16 @@ export async function handleAccount(request:Request,db:AccountDb|undefined){
    if(request.method==='GET'&&!id)return json({personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=? ORDER BY created_at LIMIT 20`).bind(user.id).all()).results});
    if(request.method==='POST'&&!id){
     const p=personalitySchema.parse(await boundedAccountJson(request,18000)),newId=crypto.randomUUID(),createdAt=Date.now();
-    const row=await db.prepare('INSERT INTO account_personalities(id,user_id,name,description,instructions,capability,model_policy,created_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM account_personalities WHERE user_id=?)<20 AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?) RETURNING id').bind(newId,user.id,p.name,p.description,p.instructions,p.capability,p.modelPolicy,createdAt,user.id,user.id,profile.data_version).first();
-    return row?json({personality:{id:newId,...p,createdAt}},201):json({error:'You can save up to 20 personalities. Remove one first.'},409);
+    const row=await db.prepare(`INSERT INTO account_personalities(id,user_id,name,description,instructions,capability,model_policy,created_at,node_slot)
+     SELECT ?,?,?,?,?,?,?,?,slots.slot FROM (${Array.from({length:20},(_,i)=>`SELECT ${i} AS slot`).join(' UNION ALL ')}) slots
+     WHERE (? IS NULL OR slots.slot=?) AND NOT EXISTS(SELECT 1 FROM account_personalities WHERE user_id=? AND node_slot=slots.slot)
+     AND (SELECT COUNT(*) FROM account_personalities WHERE user_id=?)<20 AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?) ORDER BY slots.slot LIMIT 1 RETURNING id,node_slot AS nodeSlot`).bind(newId,user.id,p.name,p.description,p.instructions,p.capability,p.modelPolicy,createdAt,p.nodeSlot??null,p.nodeSlot??null,user.id,user.id,user.id,profile.data_version).first<{id:string;nodeSlot:number}>();
+    return row?json({personality:{id:newId,...p,nodeSlot:row.nodeSlot,createdAt}},201):json({error:'This personality node is occupied or all 20 nodes are full. Choose another empty node.'},409);
    }
    if(request.method==='PATCH'&&id){
     const p=personalitySchema.parse(await boundedAccountJson(request,18000));
-    const row=await db.prepare('UPDATE account_personalities SET name=?,description=?,instructions=?,capability=?,model_policy=? WHERE user_id=? AND id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?) RETURNING id').bind(p.name,p.description,p.instructions,p.capability,p.modelPolicy,user.id,id,user.id,profile.data_version).first();
-    return row?json({personality:{id,...p}}):json({error:'Personality not found.'},404);
+    const row=await db.prepare('UPDATE account_personalities SET name=?,description=?,instructions=?,capability=?,model_policy=? WHERE user_id=? AND id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?) RETURNING id,node_slot AS nodeSlot').bind(p.name,p.description,p.instructions,p.capability,p.modelPolicy,user.id,id,user.id,profile.data_version).first<{id:string;nodeSlot:number}>();
+    return row?json({personality:{id,...p,nodeSlot:row.nodeSlot}}):json({error:'Personality not found.'},404);
    }
    if(request.method==='DELETE'&&id){await boundedAccountJson(request,1000);await db.prepare('DELETE FROM account_personalities WHERE user_id=? AND id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)').bind(user.id,id,user.id,profile.data_version).run();return json({deleted:true});}
   }

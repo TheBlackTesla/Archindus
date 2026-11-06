@@ -76,6 +76,15 @@ test('owned personality controls the actual model and prompt, including explicit
  assert.equal((await run('alice',true)).status,200);assert.match(payload.messages[0].content,/End with one practical next step/);assert.doesNotMatch(payload.messages[0].content,/Use metric units/);
  const before=calls;assert.equal((await run('bob',false)).status,404);assert.equal((await run('alice',false,crypto.randomUUID())).status,404);assert.equal(calls,before);
 });
+test('an empty brain node is claimed atomically, stays fixed on edits and can be reused only after deletion',async()=>{
+ await call('node-owner');const draft={nodeSlot:17,name:'Atlas',description:'Research',instructions:'Explain assumptions.',capability:'datadoc',modelPolicy:'inherit'};
+ const results=await Promise.all([call('node-owner','/personalities','POST',draft),call('node-owner','/personalities','POST',draft)]);assert.equal(results.filter(r=>r.status===201).length,1);assert.equal(results.filter(r=>r.status===409).length,1);
+ const created=await results.find(r=>r.status===201).json();assert.equal(created.personality.nodeSlot,17);
+ const edited=await (await call('node-owner','/personalities/'+created.personality.id,'PATCH',{...draft,nodeSlot:5})).json();assert.equal(edited.personality.nodeSlot,17,'Editing cannot silently move the occupied point');
+ assert.equal((await call('node-owner','/personalities','POST',{...draft,nodeSlot:20})).status,400);
+ assert.equal((await call('bob','/personalities','POST',draft)).status,201,'Slots are owned per account');
+ await call('node-owner','/personalities/'+created.personality.id,'DELETE',{});assert.equal((await call('node-owner','/personalities','POST',draft)).status,201);
+});
 test('explicit account deletion removes only the current user data atomically',async()=>{
  assert.equal((await call('alice','','DELETE',{confirm:'wrong'})).status,400);
  assert.equal((await call('alice','','DELETE',{confirm:'DELETE'})).status,200);
@@ -105,4 +114,14 @@ test('server applies owned personalization and temporary flag before model selec
  const run=temporary=>app.handleHosted(new Request('https://site.test/api/archindus/hosted',{method:'POST',headers:{origin:'https://site.test','content-type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),action:'generate',selectedAgentId:'architect',objective:'Who are you?',history:[],temporary})}),deps);
  assert.equal((await run(false)).status,200);assert.equal(payload.model,'gpt-6-astra');assert.match(payload.messages[0].content,/Orion/);
  assert.equal((await run(true)).status,200);assert.equal(temporaryFlag,true);assert.equal(payload.model,'gpt-6-luna');assert.doesNotMatch(payload.messages[0].content,/Orion/);
+});
+
+test('the appended node-slot migration preserves existing personalities and assigns unique owned slots',async()=>{
+ const previous=openSqlite(path.join(directory,'previous-schema.sqlite'));
+ try{
+  for(const entry of journal.entries.filter(e=>e.idx<6))for(const statement of (await readFile(path.join(root,'drizzle',entry.tag+'.sql'),'utf8')).split('--> statement-breakpoint'))if(statement.trim())await previous.prepare(statement.trim()).run();
+  for(let i=0;i<20;i++)await previous.prepare('INSERT INTO account_personalities(id,user_id,name,description,instructions,capability,model_policy,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('old-'+String(i).padStart(2,'0'),'old-owner','Old '+i,'Research','Keep existing instructions','datadoc','inherit',100).run();
+  const migration=journal.entries.find(e=>e.idx===6);for(const statement of (await readFile(path.join(root,'drizzle',migration.tag+'.sql'),'utf8')).split('--> statement-breakpoint'))if(statement.trim())await previous.prepare(statement.trim()).run();
+  const {results}=await previous.prepare('SELECT id,instructions,node_slot FROM account_personalities ORDER BY node_slot').all();assert.equal(results.length,20);assert.deepEqual(results.map(r=>r.node_slot),Array.from({length:20},(_,i)=>i));assert.ok(results.every(r=>r.instructions==='Keep existing instructions'));
+ }finally{previous.close()}
 });
