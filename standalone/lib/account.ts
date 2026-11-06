@@ -1,3 +1,4 @@
+import {emailIdentity} from './request-identity';
 import {PERSONALITY_CAPABILITIES,personalityContext,type Personality} from '../app/archindus/personalities';
 import { z } from 'zod';
 import type { ModelPolicy } from './inference/models';
@@ -7,11 +8,12 @@ export type AccountDb={prepare(sql:string):AccountStatement;batch(statements:Acc
 export const DEFAULT_SETTINGS={displayName:'',instructions:'',memoryEnabled:true,historyEnabled:true,modelPolicy:'auto' as ModelPolicy};
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Cookie'}});
 export function accountIdentity(request:Request){
+ const verified=emailIdentity(request);if(verified!==undefined)return verified;
  const id=request.headers.get('oai-authenticated-user-id');
  if(!id)return null;
  let name=request.headers.get('oai-authenticated-user-full-name')??'';
  if(request.headers.get('oai-authenticated-user-full-name-encoding')==='percent-encoded-utf-8')try{name=decodeURIComponent(name)}catch{name=''}
- return {id,name:name.slice(0,120),email:request.headers.get('oai-authenticated-user-email')??''};
+ return {id,name:name.slice(0,120),email:request.headers.get('oai-authenticated-user-email')??'',provider:'chatgpt' as const};
 }
 export async function boundedAccountJson(request:Request,max=180_000){
  const reader=request.body?.getReader();if(!reader)throw Error('Missing request');
@@ -43,7 +45,7 @@ export async function handleAccount(request:Request,db:AccountDb|undefined,optio
   if(!path.length){
    if(request.method==='GET'){
     const memories=await db.prepare('SELECT id,content,created_at AS createdAt FROM account_memories WHERE user_id=? ORDER BY created_at DESC LIMIT 100').bind(user.id).all();
-    return json({authenticated:true,user:{id:user.id,email:user.email,version:profile.data_version},settings:settings(profile),memories:memories.results,personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=? ORDER BY created_at LIMIT 20`).bind(user.id).all()).results});
+    return json({authenticated:true,user:{id:user.id,email:user.email,provider:user.provider,version:profile.data_version},settings:settings(profile),memories:memories.results,personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=? ORDER BY created_at LIMIT 20`).bind(user.id).all()).results});
    }
    if(request.method==='PATCH'){
     const s=profileSchema.parse(await boundedAccountJson(request,20_000));

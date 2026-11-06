@@ -1,3 +1,5 @@
+import {withEmailAuth} from '../../../../lib/email-auth';
+import {env} from 'cloudflare:workers';
 import {environmentForRequest} from '../../../../lib/inference/user-environment';
 const STATUS_TIMEOUT_MS = 2_500;
 
@@ -12,7 +14,7 @@ function qwenHeaders() {
   return apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
 }
 
-export async function GET(request:Request) {
+async function handle(request:Request) {
   const environment = await environmentForRequest(request);
   const hostedConfigured = Boolean(environment.enabled && (environment.key||environment.providers.length) && environment.db);
   let hostedAvailable = false;
@@ -50,3 +52,5 @@ export async function GET(request:Request) {
 }
 import { hostedEnvironment } from "../../../../lib/inference/environment";
 import { budgetAvailable } from "../../../../lib/inference/budget";
+
+export const GET=(request:Request)=>withEmailAuth(request,env as unknown as Record<string,unknown>,()=>handle(request));
