@@ -62,3 +62,10 @@ test("private text streams a filtered first response before completion and forwa
  const events=app.readEvents(res.body);assert.equal((await events.next()).value.text,"The answer");up.enqueue(app.encodeEvent({choices:[{delta:{content:" is blue."},finish_reason:"stop"}]}));up.close();let last;for await(const e of events)last=e;assert.equal(last.type,"complete");assert.equal(last.text,"The answer is blue.");
  }finally{globalThis.fetch=saved;if(old===undefined)delete process.env.ARCHINDUS_QWEN_ENDPOINT;else process.env.ARCHINDUS_QWEN_ENDPOINT=old}
 });
+
+test('a stale unavailable status still reaches hosted inference when no device model is installed',async()=>{
+ const modes=app.chatModes({deviceOnly:false,qwen:false,hosted:false,native:false,saved:[]});assert.deepEqual(modes,['hosted']);let attempts=0;
+ const result=await app.executeObjective('Write a the html code for the snake game','architect',[],[],{modes,signal:new AbortController().signal,status:()=>{},infer:async mode=>{attempts++;assert.equal(mode,'hosted');return {text:'```html\n<!doctype html><html><body><canvas></canvas><script>console.log("snake");</script></body></html>\n```',model:'GPT-6.1 Sol'}},image:async()=>new Blob()});
+ assert.equal(attempts,1);assert.equal(result.plan.primaryId,'satoshi');assert.match(result.text,/<canvas>/);
+ assert.deepEqual(app.chatModes({deviceOnly:true,qwen:true,hosted:false,native:false,saved:[]}),[],'Device-only still forbids cloud calls');
+});

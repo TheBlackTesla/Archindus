@@ -190,8 +190,9 @@ export default function ArchindusClient() {
       if(document.hidden)return;
       try {
         const response = await fetch("/api/archindus/status", { cache: "no-store", signal: AbortSignal.timeout(5000) });
+        if(!response.ok)throw new Error("Status check unavailable.");
         const status = await response.json();
-        if (active) { setQwenOnline(Boolean(status.online)); setQwenConfigured(Boolean(status.configured)); setHostedAvailable(Boolean(status.hosted?.available)); }
+        if (active) { setQwenOnline(status.online===true); setQwenConfigured(status.configured===true); setHostedAvailable(typeof status.hosted?.available==='boolean'?status.hosted.available:null); }
       } catch { if (active) { setQwenOnline(false); setHostedAvailable(null); } }
     };
     void check(); const interval = window.setInterval(check, 45000);
@@ -281,6 +282,7 @@ export default function ArchindusClient() {
       runtime.current.preference = preference;
       runtime.current.cachedOnly = true;
       hostedRuntime.current ??= new HostedRuntime();
+      hostedRuntime.current.beginUserRequest();
       hostedRuntime.current.temporary=temporary;
       hostedRuntime.current.personalityId=personalityId;
       hostedRuntime.current.onModel=model=>{if(!abort.signal.aborted&&controller.current===abort)patch(id,{model})};

@@ -13,6 +13,9 @@ export class HostedRuntime {
   onModel?:(model:string)=>void;
   private unavailableUntil = 0;
   constructor(private transport: typeof fetch = fetch.bind(globalThis), private now: () => number = Date.now) {}
+  // One explicit user retry may recheck the server after local backoff.
+  // Server-side cooldown, quota and budget checks remain authoritative.
+  beginUserRequest(){this.unavailableUntil=0;}
   async request(action: "plan" | "generate" | "image", selected: AgentId, objective: string, history: ContextMessage[], signal: AbortSignal, plan?: TaskPlan, onPartial?: (text: string) => void) {
     signal.throwIfAborted();
     if (this.now() < this.unavailableUntil) throw new Error("Hosted inference is temporarily unavailable.");

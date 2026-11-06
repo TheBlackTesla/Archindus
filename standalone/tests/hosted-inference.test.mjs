@@ -339,3 +339,11 @@ test('personality requests expose actual streaming models and deleted selections
  let localCalls=0;
  await assert.rejects(app.executeObjective('Explain a database indexing approach','satoshi',[],[],{modes:['hosted','cpu'],signal:new AbortController().signal,status:()=>{},infer:async mode=>{if(mode==='cpu'){localCalls++;return {text:'Must not run'}}return unavailable.request('generate','satoshi','Explain a database indexing approach',[],new AbortController().signal,plan)},image:async()=>new Blob()}),e=>e.name==='PersonalityUnavailable');assert.equal(localCalls,0);
 });
+
+test('an explicit user retry rechecks a recovered hosted service without weakening its server budget rejection',async()=>{
+ let calls=0,online=false;const runtime=new app.HostedRuntime(async()=>{calls++;return online?Response.json({text:'Recovered answer.',model:'GPT-6 Luna'}):Response.json({error:'Hosted capacity or spending limit reached.',code:'hosted_limit'},{status:429})});
+ const signal=new AbortController().signal,run=()=>runtime.request('generate','architect','Explain how routing works.',[],signal);
+ await assert.rejects(run(),/spending limit/);await assert.rejects(run(),/temporarily unavailable/);assert.equal(calls,1);
+ runtime.beginUserRequest();await assert.rejects(run(),/spending limit/);assert.equal(calls,2,'Server rejection is still respected');
+ online=true;runtime.beginUserRequest();assert.equal((await run()).text,'Recovered answer.');assert.equal(calls,3);
+});
