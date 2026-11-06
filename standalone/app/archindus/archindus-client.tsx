@@ -512,9 +512,9 @@ export default function ArchindusClient() {
           {activeMessage.status === "complete" && /```/.test(activeMessage.content) ? <div className="oracle-source-files"><ArtifactCards text={activeMessage.content} compact /></div> : null}
           {activeMessage.run||activeMessage.routeReason||activeMessage.model?<details className="oracle-receipt"><summary><Terminal size={15} aria-hidden="true"/><strong>Run details</strong><span>{activeMessage.run?runModelLabel(activeMessage.model)+" · "+duration(activeMessage.run.elapsedMs):runModelLabel(activeMessage.model)}</span></summary>
             <dl><dt>Task</dt><dd>{activeMessage.task ?? "Conversation"}</dd>
-            <dt>Model</dt><dd>{runModelLabel(activeMessage.model)}</dd>{activeMessage.run?<><dt>Engine</dt><dd>{activeMessage.run.engine}</dd></>:null}
+            <dt>Model</dt><dd>{runModelLabel(activeMessage.model)}</dd>
             {activeMessage.run?<><dt>First streamed text</dt><dd>{activeMessage.run.firstTextMs!==undefined?duration(activeMessage.run.firstTextMs):"No streamed text"}</dd><dt>End to end</dt><dd>{duration(activeMessage.run.elapsedMs)}</dd></>:null}
-            {activeMessage.run?.attempts.length?<><dt>Attempts</dt><dd>{activeMessage.run.attempts.map(a=>a.engine+" ("+a.state+")").join(" → ")}</dd></>:null}</dl>
+            {activeMessage.run?.attempts.length?<><dt>Attempts</dt><dd>{activeMessage.run.attempts.length}</dd></>:null}</dl>
             {activeMessage.routeReason?<p>{activeMessage.routeReason}</p>:null}</details>:null}
         </>}
       </article> : null}
