@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import path from 'node:path';
+const root=path.resolve(import.meta.dirname,'..');
+await build({stdin:{contents:"export * from './app/archindus/brain-map';export * from './app/archindus/personalities'",resolveDir:root},bundle:true,platform:'node',format:'esm',outfile:path.join(root,'outputs/brain-tests.mjs'),logLevel:'silent'});
+const app=await import('../outputs/brain-tests.mjs');
+test('zoom preserves the cursor anchor and clamps magnification',()=>{const v={zoom:1.2,x:30,y:-20},at={x:900,y:200},next=app.zoomMap(v,2,at);for(const [axis,center] of [['x',690],['y',400]])assert.ok(Math.abs((at[axis]-center-v[axis])/v.zoom-(at[axis]-center-next[axis])/next.zoom)<1e-9);assert.equal(app.zoomMap(v,100).zoom,3.5);assert.equal(app.zoomMap(v,.01).zoom,.65)});
+test('routing map has distinct builtins, twenty unique owned nodes, and truthful model mapping',()=>{const ps=Array.from({length:20},(_,i)=>({id:String(i),name:'Persona '+i,description:'Test',instructions:'Test',capability:'satoshi',modelPolicy:'inherit'})),nodes=app.brainNodes(ps);for(const name of ['Satoshi','DataDoc','Ounumi','Socrates'])assert.ok(nodes.some(n=>n.name===name));assert.equal(nodes.filter(n=>n.personality).length,20);assert.equal(new Set(nodes.map(n=>n.id)).size,nodes.length);assert.ok(nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y)));assert.equal(app.engineNode(),undefined);assert.equal(app.engineNode('gpt-6.1-sol'),'model:sol');assert.equal(app.engineNode('Archindus tools'),'model:local')});
+test('restored conversations retain owned personalities and safely reset deleted selections',()=>{const p={id:'abc',capability:'satoshi'};assert.equal(app.restorePersonalitySelection([{role:'assistant',personalityId:'abc'}],[p]).personalityId,'abc');assert.equal(app.restorePersonalitySelection([{role:'assistant',personalityId:'abc'}],[]).missing,true);assert.equal(app.restorePersonalitySelection([{role:'assistant',selectedAgentId:'socrates'}],[]).agentId,'socrates')});

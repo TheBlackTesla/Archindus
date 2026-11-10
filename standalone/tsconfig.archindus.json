@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": ["app/archindus/**/*.ts", "app/archindus/**/*.tsx", "app/api/archindus/**/*.ts", "lib/inference/**/*.ts", "types/**/*.d.ts"]
+}

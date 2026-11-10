@@ -1,0 +1,37 @@
+name: Archindus standalone verification
+on:
+  pull_request:
+    paths:
+      - 'standalone/**'
+      - '.github/workflows/standalone-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'standalone/**'
+      - '.github/workflows/standalone-ci.yml'
+permissions:
+  contents: read
+jobs:
+  standalone:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: standalone
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: standalone/package-lock.json
+      - name: Install exact dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript validation
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Verify production build
+        run: npm run build
+      - name: JavaScript regression tests
+        run: node --test tests/*.test.mjs
+      - name: Workstation gateway policy tests
+        run: python3 -m unittest discover -s runtime -p 'test_gateway.py' -v

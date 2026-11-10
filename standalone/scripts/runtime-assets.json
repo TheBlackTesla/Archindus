@@ -1,0 +1,26 @@
+[
+  {
+    "path": "public/fonts/DejaVuSans.ttf",
+    "url": "https://architect-industries.stevenscadet.chatgpt.site/fonts/DejaVuSans.ttf",
+    "bytes": 759720,
+    "sha256": "ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280"
+  },
+  {
+    "path": "public/media/vendor/stable_diffusion_webgpu.wasm",
+    "url": "https://architect-industries.stevenscadet.chatgpt.site/media/vendor/stable_diffusion_webgpu.wasm",
+    "bytes": 8921143,
+    "sha256": "96701349271283b892162ca05f6c9d6344f2d9b1097c7ec123f081a694200730"
+  },
+  {
+    "path": "public/media/vendor/tokenizers-wasm/tokenizers_wasm_bg.wasm",
+    "url": "https://architect-industries.stevenscadet.chatgpt.site/media/vendor/tokenizers-wasm/tokenizers_wasm_bg.wasm",
+    "bytes": 1524065,
+    "sha256": "3276c4e687b345041671482187a198318cd65091202472880c723ab342a094b6"
+  },
+  {
+    "path": "public/media/vendor/tokenizer.json",
+    "url": "https://architect-industries.stevenscadet.chatgpt.site/media/vendor/tokenizer.json",
+    "bytes": 2224003,
+    "sha256": "a83e0809aa4c3af7208b2df632a7a69668c6d48775b3c3fe4e1b1199d1f8b8f4"
+  }
+]
