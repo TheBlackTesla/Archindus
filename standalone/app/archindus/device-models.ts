@@ -3,9 +3,10 @@ import type { ModelPreference } from "./browser-runtime";
 export type DeviceMode = "webgpu" | "cpu";
 export type DeviceModel = { mode: DeviceMode; id: string; label: string };
 export const CPU_CHAT: DeviceModel = { mode: "cpu", id: "onnx-community/Qwen2.5-0.5B-Instruct", label: "Qwen2.5 0.5B · CPU" };
+export const CPU_SMALL: DeviceModel = { mode: "cpu", id: "onnx-community/SmolLM2-360M-Instruct-ONNX", label: "SmolLM2 360M · CPU" };
 export const CPU_CODER: DeviceModel = { mode: "cpu", id: "onnx-community/Qwen2.5-Coder-0.5B-Instruct", label: "Qwen2.5 Coder 0.5B · CPU" };
 const gpu = [true,false].flatMap(f16 => ["auto","quality"].flatMap(pref => browserModelCandidates(pref,f16).map(m => ({mode:"webgpu" as const,id:m.id,label:m.label+" · GPU"}))));
-const catalog = new Map([CPU_CHAT, CPU_CODER, ...gpu].map(m => [m.id,m]));
+const catalog = new Map([CPU_CHAT, CPU_SMALL, CPU_CODER, ...gpu].map(m => [m.id,m]));
 export const deviceModel = (id?: string) => id ? catalog.get(id) : undefined;
 export const LAST_MODEL_KEY = "archindus.last-device-model.v1";
 // Read only keys in the engines' existing caches. No manifests, shaders or weights fetched on startup.
@@ -27,6 +28,7 @@ export function usableModels(models: DeviceModel[], last: string | undefined, gp
 }
 export function setupTarget(pref: ModelPreference, gpu: boolean, f16: boolean, models: DeviceModel[], last?: string) {
   const saved = usableModels(models,last,gpu,f16);
+  if (pref === "smol") return CPU_SMALL;
   if (pref === "cpu") return CPU_CHAT;
   if (["auto","small"].includes(pref) && saved.length) return saved[0];
   if (!gpu) return CPU_CHAT;

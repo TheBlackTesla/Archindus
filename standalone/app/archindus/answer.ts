@@ -40,6 +40,10 @@ export function formatAnswer(raw:string,task:string):string {
 
 export function validateAnswer(text: string, task: string): string | null {
   if (!text.trim()) return "The model did not produce a final answer.";
+  // Syntax checks are deterministic checks, not claims of execution or factual verification.
+  for(const block of text.matchAll(/^\s*```json\s*\n([\s\S]*?)^\s*```\s*$/gm)) {
+    try { JSON.parse(block[1]); } catch { return "The JSON output is invalid. Please retry."; }
+  }
   if (task === "code") {
     if (isCapabilityDenial(text)) return "The model failed to produce the requested code.";
     const fences = text.match(/^\s*```/gm) ?? [];

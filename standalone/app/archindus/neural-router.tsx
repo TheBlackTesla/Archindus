@@ -18,7 +18,7 @@ export function NeuralRouter(p:Props){
   const mesh:Point[]=Array.from({length:count},(_,i)=>{const y=1-2*((i+.5)/count),angle=i*Math.PI*(3-Math.sqrt(5)),ring=Math.sqrt(1-y*y),radius=.63+random()*.37;return {x:Math.cos(angle)*ring*radius*(1+.07*Math.sin(angle*3+y*5)),y:y*radius,z:Math.sin(angle)*ring*radius,size:.5+random()*1.15}});
   const topology=nearestGraph(mesh),charge=new Float32Array(count);let previousPath='';
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
-  const resize=()=>{const rect=el.getBoundingClientRect();width=rect.width;height=rect.height;const dpr=Math.min(window.devicePixelRatio||1,1.5);c.width=Math.round(width*dpr);c.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)};
+  const resize=()=>{width=el.clientWidth;height=el.clientHeight;const dpr=Math.min(window.devicePixelRatio||1,1.5);c.width=Math.round(width*dpr);c.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)};
   const observer=new ResizeObserver(resize);observer.observe(el);resize();
   const draw=(now:number)=>{
    frame=requestAnimationFrame(draw);if(document.hidden||now-last<(motion.matches?200:1000/30))return;const dt=Math.min(.08,(now-last)/1000);last=now;const s=latest.current;
@@ -37,15 +37,29 @@ export function NeuralRouter(p:Props){
    const surface=mesh.map((n,i)=>{charge[i]*=Math.exp(-dt*2.5);return {...projectNeuron(n,yaw,pitch,width,height,s.zoom,expansion),size:n.size,light:motion.matches?0:charge[i]}});
    for(const [a,b] of topology.edges){const u=surface[a],v=surface[b],front=Math.max(.05,((u.depth+v.depth)/2+1)/2),light=Math.min(u.light,v.light);ctx.strokeStyle=`rgba(${light>.2?'144,222,255':'136,180,204'},${.07+front*.26+light*.48})`;ctx.lineWidth=.65+light*.75;ctx.beginPath();ctx.moveTo(u.x,u.y);ctx.lineTo(v.x,v.y);ctx.stroke()}
    for(const at of surface){const front=Math.max(.1,(at.depth+1.1)/2.2),light=at.light;if(light>.15){const halo=ctx.createRadialGradient(at.x,at.y,0,at.x,at.y,8+light*5);halo.addColorStop(0,`rgba(114,209,255,${light*front*.55})`);halo.addColorStop(1,'rgba(100,200,255,0)');ctx.fillStyle=halo;ctx.beginPath();ctx.arc(at.x,at.y,8+light*5,0,Math.PI*2);ctx.fill()}ctx.fillStyle=`rgba(${light>.3?'224,249,255':'166,208,230'},${Math.min(1,.15+front*.7+light*.5)})`;ctx.beginPath();ctx.arc(at.x,at.y,Math.max(.4,at.size*at.scale*(.5+front*.65)+light*.85),0,Math.PI*2);ctx.fill()}
-   const links=neuralLinks(s.nodes,s.path),active=new Set(s.path.slice(1).map((id,i)=>s.path[i]+'>'+id));
-   for(const [a,b] of links){const u=projected.get(a)!,v=projected.get(b)!,lit=active.has(a+'>'+b)||active.has(b+'>'+a),related=hover.current===a||hover.current===b||s.selected===a||s.selected===b;
-    const depth=Math.max(.1,((u.depth+v.depth)/2+1.1)/2.2);ctx.strokeStyle=lit?`rgba(164,229,255,${.7+energy*.25})`:related?'rgba(130,196,220,.3)':`rgba(103,162,193,${.07+depth*.25})`;ctx.lineWidth=lit?1.45:related?.8:.5;
-    const bend=(v.x-u.x)*.035;ctx.beginPath();ctx.moveTo(u.x,u.y);ctx.quadraticCurveTo((u.x+v.x)/2+bend,(u.y+v.y)/2-14,v.x,v.y);ctx.stroke();
-    if(lit&&s.running&&!motion.matches){const t=(now*.0004)%1,x=(1-t)*(1-t)*u.x+2*(1-t)*t*((u.x+v.x)/2+bend)+t*t*v.x,y=(1-t)*(1-t)*u.y+2*(1-t)*t*((u.y+v.y)/2-14)+t*t*v.y;ctx.fillStyle='#d8f6ff';ctx.shadowBlur=10;ctx.shadowColor='#8edcff';ctx.beginPath();ctx.arc(x,y,2.1,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;}
+   const routeLinks = s.path.slice(1).map((id, index) => [s.path[index], id]);
+   const links = s.path.length ? routeLinks : neuralLinks(s.nodes).filter(([from, to]) =>
+     from === 'router' || [hover.current, s.selected].some(id => id === from || id === to));
+   for (const [from, to] of links) {
+    const start = projected.get(from), end = projected.get(to);
+    if (!start || !end) continue;
+    ctx.strokeStyle = s.path.length ? `rgba(164,229,255,${.78+energy*.2})` : 'rgba(103,162,193,.18)';
+    ctx.lineWidth = s.path.length ? 1.6 : .65;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    if (s.running && !motion.matches) {
+     const progress = (now*.0004)%1;
+     ctx.fillStyle = '#d8f6ff';
+     ctx.beginPath();
+     ctx.arc(start.x+(end.x-start.x)*progress,start.y+(end.y-start.y)*progress,2.1,0,Math.PI*2);
+     ctx.fill();
+    }
    }
    // Vacant slots stay visibly attached to the volume, but never transmit.
    for(const n of s.nodes.filter(n=>n.kind==='empty')){const a=projected.get(n.id)!,b=projected.get('router')!;ctx.setLineDash([1,9]);ctx.strokeStyle='rgba(110,157,182,.07)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);}
-   for(const n of s.nodes){const at=projected.get(n.id)!,button=buttons.current.get(n.id);if(!button)continue;button.style.transform=`translate(${at.x}px,${at.y}px) translate(-50%,-50%) scale(${at.scale})`;button.style.opacity=String(s.selected===n.id||hover.current===n.id||s.path.includes(n.id)?1:at.opacity);button.style.zIndex=String(10+Math.round(at.depth*5));}
+   for(const n of s.nodes){const at=projected.get(n.id)!,button=buttons.current.get(n.id);if(!button)continue;button.style.transform=`translate(${at.x}px,${at.y}px) translate(-50%,-50%) scale(${at.scale})`;button.style.opacity=String(s.selected===n.id||hover.current===n.id||s.path.includes(n.id)?1:at.opacity);button.style.zIndex=String((s.path.includes(n.id)?30:10)+Math.round(at.depth*5));}
    const anchor=s.selected?projected.get(s.selected):undefined;
    if(anchor){const cardWidth=Math.min(300,width-32),left=anchor.x>width*.5?anchor.x+30:anchor.x-cardWidth-30;el.style.setProperty('--inspect-left',Math.max(16,Math.min(width-cardWidth-16,left))+'px');el.style.setProperty('--inspect-top',Math.max(80,Math.min(170,anchor.y-100))+'px');}
   };

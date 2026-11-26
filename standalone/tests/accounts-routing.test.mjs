@@ -72,7 +72,7 @@ test('personalities have owned CRUD, validation, export, and an atomic twenty-pe
 test('owned personality controls the actual model and prompt, including explicit temporary selection',async()=>{
  let payload,calls=0;
  const run=(user,temporary,id=ownedPersonality.id)=>app.handleHosted(new Request('https://site.test/api/archindus/hosted',{method:'POST',headers:{origin:'https://site.test','content-type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),action:'generate',selectedAgentId:'architect',objective:'Explain this approach',history:[],temporary,personalityId:id})}),{key:'test-key',enabled:true,db,limits:app.DEFAULT_LIMITS,personalize:(t,id)=>app.accountPersonalization(db,{id:user,name:'',email:''},t,id),fetch:async(_url,init)=>{calls++;payload=JSON.parse(init.body);return Response.json({choices:[{message:{content:'I am Archindus. Here is one practical next step.'},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:10}})}});
- assert.equal((await run('alice',false)).status,200);assert.equal(payload.model,'gpt-6-astra');assert.match(payload.messages[0].content,/End with one practical next step/);assert.match(payload.messages[0].content,/identity.*Archindus/i);
+ assert.equal((await run('alice',false)).status,200);assert.equal(payload.model,'gpt-6.2-astra');assert.match(payload.messages[0].content,/End with one practical next step/);assert.match(payload.messages[0].content,/identity.*Archindus/i);
  assert.equal((await run('alice',true)).status,200);assert.match(payload.messages[0].content,/End with one practical next step/);assert.doesNotMatch(payload.messages[0].content,/Use metric units/);
  const before=calls;assert.equal((await run('bob',false)).status,404);assert.equal((await run('alice',false,crypto.randomUUID())).status,404);assert.equal(calls,before);
 });
@@ -97,11 +97,14 @@ test('explicit account deletion removes only the current user data atomically',a
 test('routing selects the cheapest capable tier, preserves explicit policy, and every greeting identifies Archindus',()=>{
  const plan=(task,primaryId='architect')=>({task,primaryId});
  assert.equal(app.selectTextModel('What is a sunset?',plan('chat')).id,'gpt-6-luna');
+ for (const personality of ['socrates','datadoc','satoshi','wolf']) {
+  assert.equal(app.selectTextModel('What is a sunset?',plan('chat',personality)).id,'gpt-6-luna');
+ }
  assert.equal(app.selectTextModel('Summarize this report',plan('document','datadoc')).id,'gpt-6.1-terra');
- assert.equal(app.selectTextModel('Write a function',plan('code','satoshi')).id,'gpt-6.1-sol');
- assert.equal(app.selectTextModel('Give a rigorous proof',plan('chat','socrates')).id,'gpt-6-astra');
+ assert.equal(app.selectTextModel('Write a function',plan('code','satoshi')).id,'gpt-6.2-sol');
+ assert.equal(app.selectTextModel('Give a rigorous proof',plan('chat','socrates')).id,'gpt-6.2-astra');
  assert.equal(app.selectTextModel('Give a rigorous proof',plan('chat'),'economy').id,'gpt-6-luna');
- assert.equal(app.selectTextModel('Hello there',plan('chat'),'quality').id,'gpt-6-astra');
+ assert.equal(app.selectTextModel('Hello there',plan('chat'),'quality').id,'gpt-6.2-astra');
  for(const id of ['satoshi','socrates','ounumi','datadoc','wolf'])assert.match(app.quickReply('Hello',id,[]).text,/I'm Archindus/);
  for(const m of app.MODEL_CATALOG)assert.ok(app.textCost(100,100,m)>=100*m.input+100*m.output);
  const sol=app.MODEL_CATALOG[2];
@@ -112,7 +115,7 @@ test('server applies owned personalization and temporary flag before model selec
  let payload,temporaryFlag;
  const deps={key:'test-key',enabled:true,db,limits:app.DEFAULT_LIMITS,personalize:async temporary=>{temporaryFlag=temporary;return temporary?{modelPolicy:'economy'}:{modelPolicy:'quality',personalContext:'Reference memory: Orion.'}},fetch:async(_url,init)=>{payload=JSON.parse(init.body);return Response.json({choices:[{message:{content:'I am Archindus.'},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:5}})}};
  const run=temporary=>app.handleHosted(new Request('https://site.test/api/archindus/hosted',{method:'POST',headers:{origin:'https://site.test','content-type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),action:'generate',selectedAgentId:'architect',objective:'Who are you?',history:[],temporary})}),deps);
- assert.equal((await run(false)).status,200);assert.equal(payload.model,'gpt-6-astra');assert.match(payload.messages[0].content,/Orion/);
+ assert.equal((await run(false)).status,200);assert.equal(payload.model,'gpt-6.2-astra');assert.match(payload.messages[0].content,/Orion/);
  assert.equal((await run(true)).status,200);assert.equal(temporaryFlag,true);assert.equal(payload.model,'gpt-6-luna');assert.doesNotMatch(payload.messages[0].content,/Orion/);
 });
 
@@ -124,4 +127,40 @@ test('the appended node-slot migration preserves existing personalities and assi
   const migration=journal.entries.find(e=>e.idx===6);for(const statement of (await readFile(path.join(root,'drizzle',migration.tag+'.sql'),'utf8')).split('--> statement-breakpoint'))if(statement.trim())await previous.prepare(statement.trim()).run();
   const {results}=await previous.prepare('SELECT id,instructions,node_slot FROM account_personalities ORDER BY node_slot').all();assert.equal(results.length,20);assert.deepEqual(results.map(r=>r.node_slot),Array.from({length:20},(_,i)=>i));assert.ok(results.every(r=>r.instructions==='Keep existing instructions'));
  }finally{previous.close()}
+});
+test('feedback is owned, replaceable, exported and erased with account data',async()=>{
+ await call('feedback-user');await call('feedback-other');
+ const conversationId=crypto.randomUUID(),messageId=crypto.randomUUID();
+ await call('feedback-user','/conversations/'+conversationId,'PUT',{messages:[{id:'question',role:'user',content:'Question',status:'complete'},{id:messageId,role:'assistant',content:'Answer',status:'complete',model:'Test (test/model) · Provider',task:'chat'}]});
+ const body={conversationId,messageId,rating:1};
+ assert.equal((await call('feedback-other','/feedback','POST',body)).status,409);
+ assert.equal((await call('feedback-user','/feedback','POST',{...body,model:'forged'})).status,400);
+ assert.equal((await call('feedback-user','/feedback','POST',body)).status,200);
+ await call('feedback-user','/feedback','POST',{...body,rating:-1});
+ const records=(await (await call('feedback-user','/feedback')).json()).records;
+ assert.equal(records.length,1);assert.equal(records[0].rating,-1);
+ assert.equal((await (await call('feedback-user','/export')).json()).routingFeedback.length,1);
+ await call('feedback-user','','DELETE',{confirm:'DELETE'});await call('feedback-user');
+ assert.equal((await (await call('feedback-user','/feedback')).json()).records.length,0);
+});
+
+test('saved conversations retain routing receipts and reasons across reload and export',async()=>{
+ await call('receipt-owner');
+ const id=crypto.randomUUID(),receipt={policyVersion:'operational-v1',shadowPolicyVersion:'confidence-v2',attempts:[{model:'Example (example/free:free) · OpenRouter',outcome:'complete',elapsedMs:100,reservedMicrodollars:0,chargedMicrodollars:0}]};
+ const messages=[{id:'question',role:'user',content:'Hello',status:'complete'},{id:'answer',role:'assistant',content:'Hello!',status:'complete',receipt,routeReason:'routine request'}];
+ assert.equal((await call('receipt-owner','/conversations/'+id,'PUT',{messages})).status,200);
+ const restored=await (await call('receipt-owner','/conversations/'+id)).json();assert.deepEqual(restored.messages[1].receipt,receipt);assert.equal(restored.messages[1].routeReason,'routine request');
+ const exported=await (await call('receipt-owner','/export')).json();assert.deepEqual(exported.conversations[0].messages[1].receipt,receipt);
+});
+
+test('500-message conversations survive reload and export; oversize saves preserve existing history',async()=>{
+ await call('long-history');const id=crypto.randomUUID();
+ const messages=Array.from({length:500},(_,i)=>({id:String(i),role:i%2?'assistant':'user',content:'Message '+i,status:'complete'}));
+ assert.equal((await call('long-history','/conversations/'+id,'PUT',{messages})).status,200);
+ const restored=await (await call('long-history','/conversations/'+id)).json();assert.equal(restored.messages.length,500);assert.equal(restored.messages[0].content,'Message 0');assert.equal(restored.messages[499].content,'Message 499');
+ const exported=await (await call('long-history','/export')).json();assert.deepEqual(exported.conversations[0].messages,messages);
+ assert.equal((await call('long-history','/conversations/'+id,'PUT',{messages:[...messages,messages[0]]})).status,400);
+ const oversized=messages.map(m=>({...m,content:'x'.repeat(4000)}));
+ assert.equal((await call('long-history','/conversations/'+id,'PUT',{messages:oversized})).status,413);
+ assert.deepEqual((await (await call('long-history','/conversations/'+id)).json()).messages,messages);
 });

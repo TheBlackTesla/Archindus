@@ -1,3 +1,7 @@
+import {currentOfficial} from './current-official';
+import {liveSearchWithFallback} from './live-search';
+import {currentPresidentQuestion,needsLiveSearch} from '../../app/archindus/freshness';
+import {classifyTask} from '../../app/archindus/task-complexity';
 import {modelLabel} from './model-label';
 import {routedCompletion} from './multi-router';
 import type {Provider} from './providers';
@@ -13,17 +17,19 @@ import { MODEL_CATALOG, selectTextModel, textCost, textUsageCost, type ModelPoli
 // Fixed models/parameters: request bodies cannot select a more expensive model,
 // change resolution/quality, invoke tools, or increase the output allowance.
 export const TEXT_MODEL = "gpt-6-luna";
-export const IMAGE_MODEL = "gpt-image-1-mini";
+export const IMAGE_MODEL = "gpt-image-2.6-flare";
+const FALLBACK_IMAGE_MODEL = "gpt-image-1-mini";
 const utf8 = (text: string) => new TextEncoder().encode(text).length;
 type Message = { role: string; content: string };
 export const textReservation = (messages: Message[], output: number, model:TextModel=MODEL_CATALOG[0]) => textCost(messages.reduce((sum,m)=>sum+utf8(m.content)+32,256),output,model);
-export const imageReservation = (prompt: string) => 20_000 + (utf8(prompt) + 256) * 2;
+export const imageReservation = (prompt: string) => 60_000 + (utf8(prompt) + 256) * 5;
 
 const schema = z.object({
   requestId: z.string().uuid(),
   action: z.enum(["plan", "generate", "image"]),
   stream: z.boolean().optional(),
   temporary: z.boolean().optional(),
+  referenceOnly:z.boolean().optional(),
   personalityId:z.string().uuid().optional(),
   selectedAgentId: z.string().max(30),
   objective: z.string().trim().min(1).max(16_000),
@@ -60,17 +66,19 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
   try{if(deps.personalize)personal=await deps.personalize(input.temporary===true,input.personalityId)}catch(e){return json({error:e instanceof Error&&e.name==='PersonalityNotFound'?'This personality is unavailable. Select another personality.':'Your personalization could not be loaded. Please retry.'},e instanceof Error&&e.name==='PersonalityNotFound'?404:503)}
   if (!AGENTS.some(a => a.id === input.selectedAgentId) || (input.plan && !AGENTS.some(a => a.id === input.plan!.primaryId))) return json({ error: "Unknown agent." }, 400);
   if (input.action === "image" && input.objective.length > 2400) return json({ error: "Use an image description under 2,400 characters." }, 400);
+  if(!input.referenceOnly&&input.action==='generate'&&currentPresidentQuestion(input.objective)){const official=await currentOfficial(deps.fetch??fetch);const result=await official.clone().json();if(!result.model.includes('unavailable'))return official;}
+  if(!input.referenceOnly&&input.action==='generate'&&needsLiveSearch(input.objective,input.history))return liveSearchWithFallback(request,input.objective,input.history,{key:deps.providers?.find(p=>p.id==='gemini')?.key,openAIKey:deps.key,accountingSecret:deps.routerSecret??deps.key,db:deps.db,limits:deps.limits,send:deps.fetch??fetch,now:(deps.now??Date.now)(),id:input.requestId});
   let plan = fallbackPlan(input.objective, input.selectedAgentId as AgentId, input.history);
   if (input.plan) plan = parsePlan(JSON.stringify({ agentId: input.plan.primaryId, task: input.plan.task }), plan);
   if(personal.capability)plan={...plan,primaryId:personal.capability};
   const planning = input.action === "plan", image = input.action === "image";
-  const continuing=/^(?:continue|yes|do it|go ahead|now (?:add|change|explain)|explain (?:it|that)|make it|expand|shorten|revise)/i.test(input.objective);
-  const routingObjective=continuing?`${[...input.history].reverse().find(m=>m.role==='user')?.content??''}\n${input.objective}`:input.objective;
-  const model=selectTextModel(routingObjective,plan,personal.modelPolicy??deps.modelPolicy,planning);
+  const routingObjective=input.objective;
+  const complexity=classifyTask(routingObjective,plan.task,input.history);
+  const model=selectTextModel(routingObjective,plan,complexity.level==='demanding'&&(personal.modelPolicy??deps.modelPolicy)!=='economy'?'quality':personal.modelPolicy??deps.modelPolicy,planning);
   const outputLimit = planning ? 240 : model.reasoning==='high' ? 8000 : ["code", "document"].includes(plan.task) ? 6000 : 1800;
   const personalization=personal.personalContext??deps.personalContext;
   const messages = [{ role: "system", content: planning ? `${PLANNER_PROMPT}\nJSON schema: ${PLAN_SCHEMA}` : `${getAgentPrompt(plan.primaryId)}\n${taskInstructions(plan)}${personalization?'\n'+personalization:''}${personal.personalityContext?'\n'+personal.personalityContext:''}` }, ...modelContext(input.history, input.objective, 12_000)];
-  if(!image&&deps.providers?.length)return routedCompletion({request,id:input.requestId,plan,objective:routingObjective,messages,stream:input.stream===true&&!planning,planning,policy:personal.modelPolicy??deps.modelPolicy,providers:deps.providers,routerSecret:deps.routerSecret,openAIKey:deps.key,openAIModel:model,db:deps.db,limits:deps.limits,send:deps.fetch??fetch.bind(globalThis),now:deps.now??Date.now});
+  if(!image&&deps.providers?.length){const routed=await routedCompletion({request,complexity,temporary:input.temporary,id:input.requestId,plan,objective:routingObjective,messages,stream:input.stream===true&&!planning,planning,policy:personal.modelPolicy??deps.modelPolicy,providers:deps.providers,routerSecret:deps.routerSecret,openAIKey:deps.key,openAIModel:model,db:deps.db,limits:deps.limits,send:deps.fetch??fetch.bind(globalThis),now:deps.now??Date.now});const headers=new Headers(routed.headers);headers.set('X-Archindus-Complexity',complexity.level);headers.set('X-Archindus-Route-Reason',complexity.reasons.join('. '));return new Response(routed.body,{status:routed.status,headers});}
   const imagePrompt=input.objective+(personal.personalityContext?'\nCreative direction: '+personal.personalityContext+' Do not render instructions as text.':'');
   const amount = image ? imageReservation(imagePrompt) : textReservation(messages, outputLimit,model);
   const now = deps.now?.() ?? Date.now();
@@ -93,17 +101,25 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
   try {
     request.signal.throwIfAborted();
     const send=deps.fetch??fetch.bind(globalThis);
-    const response = await send(`https://api.openai.com/v1/${image ? "images/generations" : "chat/completions"}`, {
+    let imageModel = IMAGE_MODEL;
+    const sendRequest = () => send(`https://api.openai.com/v1/${image ? "images/generations" : "chat/completions"}`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${deps.key}` },
       signal,
-      body: JSON.stringify(image ? { model: IMAGE_MODEL, prompt: imagePrompt, n: 1, size: "1024x1024", quality: "low", output_format: "png" } : {
+      body: JSON.stringify(image ? { model: imageModel, ...(imageModel === IMAGE_MODEL ? { complexity: "low" } : {}), prompt: imagePrompt, n: 1, size: "1024x1024", quality: "low", output_format: "png" } : {
         model: model.id, messages, max_completion_tokens: outputLimit, reasoning_effort:model.reasoning, stream: streaming, store: false,
         ...(streaming ? { stream_options: { include_usage: true } } : {}),
         ...(planning ? { response_format: { type: "json_object" } } : {}),
       }),
     });
+    let response = await sendRequest();
+    let error = response.ok ? null : await boundedJson(response, 32_000).catch(() => null);
+    // Retry only an explicit model access failure before generation starts.
+    if (image && [400, 403, 404].includes(response.status) && error?.error?.code === "model_not_found") {
+      imageModel = FALLBACK_IMAGE_MODEL;
+      response = await sendRequest();
+      error = response.ok ? null : await boundedJson(response, 32_000).catch(() => null);
+    }
     if (!response.ok) {
-      const error = await boundedJson(response, 32_000).catch(() => null);
       // Respect a provider safety refusal; never route it to another generator.
       const code = error?.error?.code;
       if (["content_policy_violation", "moderation_blocked", "safety_violations"].includes(code) || /safety|content policy|moderation/i.test(error?.error?.message ?? "")) return json({ error: "This request could not be generated. Please revise the description.", code: "content_refused" }, 422);
@@ -125,8 +141,8 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
       const blob = new Blob([bytes], { type: "image/png" });
       await validateGeneratedImage(blob, 1024);
       const usage = data.usage;
-      if (Number.isSafeInteger(usage?.input_tokens) && usage.input_tokens >= 0 && Number.isSafeInteger(usage?.output_tokens) && usage.output_tokens > 0) actual = Math.ceil(usage.input_tokens * 2 + usage.output_tokens * 8);
-      return new Response(blob, { headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Content-Disposition": 'inline; filename="ounumi.png"', "X-Content-Type-Options": "nosniff", "X-Archindus-Model": IMAGE_MODEL } });
+      if (Number.isSafeInteger(usage?.input_tokens) && usage.input_tokens >= 0 && Number.isSafeInteger(usage?.output_tokens) && usage.output_tokens > 0) actual = Math.ceil(usage.input_tokens * (imageModel === IMAGE_MODEL ? 5 : 2) + usage.output_tokens * (imageModel === IMAGE_MODEL ? 30 : 8));
+      return new Response(blob, { headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Content-Disposition": 'inline; filename="ounumi.png"', "X-Content-Type-Options": "nosniff", "X-Archindus-Model": imageModel } });
     }
     const usage = data.usage;
     if (Number.isSafeInteger(usage?.prompt_tokens) && usage.prompt_tokens > 0 && Number.isSafeInteger(usage?.completion_tokens) && usage.completion_tokens >= 0) actual = textUsageCost(usage,model);
@@ -136,7 +152,8 @@ export async function handleHosted(request: Request, deps: HostedDependencies) {
     if (planning) return json({ plan: parsePlan(choice.message.content, plan), model: modelLabel(model,'OpenAI',data.model) });
     const text = formatAnswer(choice.message.content,plan.task);
     if (validateAnswer(text, plan.task)) throw new Error("Invalid answer");
-    return json({ text, model: modelLabel(model,'OpenAI',data.model) });
+    const reportedModel = typeof data.model === 'string' && /^[\w.:/@+-]{1,180}$/.test(data.model) ? data.model : undefined;
+    return json({ text, model: modelLabel(model,'OpenAI',data.model), reportedModel });
   } catch(error) { console.warn('Hosted transport failure',{name:error instanceof Error?error.name:'Unknown',message:error instanceof Error?error.message.replace(/sk-[\w-]+/g,'[redacted]').slice(0,160):'Request failed'});return json({ error: "Hosted inference could not complete the request. Trying local inference." }, 503); }
   finally {
     try { if (!streamOwnsSettlement) await settle(deps.db, input.requestId, actual); }

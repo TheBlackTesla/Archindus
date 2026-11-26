@@ -69,3 +69,13 @@ test('a stale unavailable status still reaches hosted inference when no device m
  assert.equal(attempts,1);assert.equal(result.plan.primaryId,'satoshi');assert.match(result.text,/<canvas>/);
  assert.deepEqual(app.chatModes({deviceOnly:true,qwen:true,hosted:false,native:false,saved:[]}),[],'Device-only still forbids cloud calls');
 });
+test("SmolLM2 can be selected and rediscovered for automatic browser routing", async () => {
+ const target=app.setupTarget("smol",false,false,[]);
+ assert.equal(target.id,"onnx-community/SmolLM2-360M-Instruct-ONNX");
+ const models=await app.discoverDeviceModels({
+  keys:async()=>["transformers-cache"],
+  open:async()=>({keys:async()=>[new Request("https://huggingface.co/"+target.id+"/resolve/main/onnx/model_q4.onnx")]})
+ });
+ assert.equal(models[0].id,target.id);
+ assert.equal(app.usableModels(models,undefined,false,false)[0].mode,"cpu");
+});

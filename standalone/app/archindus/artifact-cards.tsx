@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { codeArtifacts, previewDocument } from "./artifacts";
+import { downloadableCodeArtifacts, previewDocument } from "./artifacts";
 import { finalAnswer } from "./answer";
 
 /** Keep a native link alive for the artifact's lifetime, including repeated saves. */
@@ -32,7 +32,7 @@ function ArtifactContents({ content, imageUrl, compact }: { content: string; ima
     return () => { active.current = false; };
   }, []);
   const markdown = useMemo(() => new Blob([content], { type: "text/plain;charset=utf-8" }), [content]);
-  const files = useMemo(() => codeArtifacts(content).map(file => ({ ...file, blob: new Blob([file.content], { type: "text/plain;charset=utf-8" }) })), [content]);
+  const files = useMemo(() => (compact ? downloadableCodeArtifacts(content) : []).map(file => ({ ...file, blob: new Blob([file.content], { type: "text/plain;charset=utf-8" }) })), [content]);
   const exportDocument = async (format: "docx" | "pdf") => {
     if (preparing.current) return;
     preparing.current = true;
@@ -51,6 +51,7 @@ function ArtifactContents({ content, imageUrl, compact }: { content: string; ima
     }
     finally { preparing.current = false; if (active.current) setBusy(""); }
   };
+  if (compact && !imageUrl && !files.length) return null;
   return <div className="artifact-cards">
     {imageUrl ? <figure className="image-artifact">
       {/* Local generated PNGs must not use the unavailable image optimizer. */}

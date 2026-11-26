@@ -10,3 +10,19 @@
 .expanded .neuron.provider-node:not(:hover):not(:focus-visible):not(.selected):not(.engaged) .neuron-label{opacity:0}.neuron.provider-node .neuron-label{max-width:210px;white-space:normal;text-align:center}.oracle-provider-list{display:grid;gap:8px;margin:12px 0}.oracle-provider-list>div{padding:10px;border:1px solid #243943;border-radius:7px}.oracle-provider-list strong,.oracle-provider-list small{display:block}.oracle-provider-list small{font-size:10px;line-height:1.8;color:#7599ac}
 
 .archindus-connections fieldset{border:0;padding:0;min-width:0}.archindus-connections label{display:block;margin:13px 0 5px;font-size:12px}.archindus-connections input,.archindus-connections textarea{box-sizing:border-box;width:100%;background:#070f14;color:#c8e0eb;border:1px solid #304954;border-radius:8px;padding:10px;font-size:12px}.archindus-connections textarea{font-family:monospace}.archindus-connections fieldset:disabled{opacity:.55}.archindus-connections button{margin-top:12px}.connection-list>div{padding:12px;border:1px solid #2a414e;border-radius:9px;margin-top:12px}.connection-list strong,.connection-list small{display:block}.connection-list small{color:#7498ac;font-size:10px;margin-top:5px}
+
+.observed-route { text-align: left; color: #aac5d5; font-size: .875rem; }
+.observed-route-steps { display: flex; gap: .45rem; flex-wrap: wrap; list-style: none; margin: .5rem 0; padding: 0; }
+.observed-route-steps li { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
+.observed-route button, .neural-execution button {
+  max-width: 100%; padding: .35rem .6rem; border: 1px solid #335669; border-radius: .45rem;
+  background: #091923; color: #d2edf9; cursor: pointer; overflow-wrap: anywhere;
+}
+.observed-route button:focus-visible, .observed-route summary:focus-visible { outline: 2px solid #9edfff; outline-offset: 2px; }
+.observed-route details { margin-block: .55rem; }
+.observed-route details summary { display: flex; align-items: center; gap: .4rem; padding: .35rem 0; cursor: pointer; }
+.observed-route details summary svg { flex: none; }
+.observed-route details p { margin: .35rem 0 .55rem; font-size: .875rem; color: #b7cdd9; }
+.observed-route-attempts ol { padding-left: 1.4rem; }
+.observed-route-attempts li + li { margin-top: .4rem; }
+.neuron { display: grid; place-items: center; }

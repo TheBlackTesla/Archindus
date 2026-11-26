@@ -64,6 +64,41 @@
       "when": 1793974964591,
       "tag": "0008_giant_miss_america",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794777524179,
+      "tag": "0009_adaptive_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794781583438,
+      "tag": "0010_lying_iron_patriot",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794842320931,
+      "tag": "0011_narrow_zaran",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794860015629,
+      "tag": "0012_classy_lethal_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1795548548750,
+      "tag": "0013_wandering_silver_surfer",
+      "breakpoints": true
     }
   ]
 }

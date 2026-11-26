@@ -1,6 +1,9 @@
+import {needsLiveSearch} from './freshness';
+import {classifyTask} from './task-complexity';
 import { workbench } from "./workbench";
 import { withoutToolTurns, cleanHistory, finalAnswer, formatAnswer, validateAnswer, type ContextMessage } from "./answer";
-import { attachmentContext, summarizeCsv, type Attachment } from "./artifacts";
+import { evidenceContext } from "./evidence";
+import { summarizeCsv, type Attachment } from "./artifacts";
 import { fallbackPlan, quickReply, type TaskPlan } from "./orchestration";
 import type { AgentId } from "./agents";
 
@@ -22,6 +25,12 @@ export async function executeObjective(input: string, selected: AgentId, history
   const tool = workbench(input, selected, history, files);
   if (tool) return tool;
   let plan = fallbackPlan(input, selected, history);
+  if(!files.length && needsLiveSearch(input,history)){
+    if(!ports.modes.includes('hosted'))return {plan,model:'Archindus · live verification unavailable',text:'This question needs live web verification. Online search is unavailable in this mode. Switch to Automatic and retry; I will not guess from offline knowledge.'};
+    ports.status('Checking live web sources',plan);
+    try{const result=await ports.infer('hosted','generate',plan,input,history);check();return {plan,text:result.text??'Live verification was unavailable. Please retry.',model:result.model??'Archindus · live verification unavailable'};}
+    catch{check();return {plan,model:'Archindus · live verification unavailable',text:'Live verification is unavailable right now. Please retry; I will not substitute an outdated offline answer.'};}
+  }
   const quick = quickReply(input, selected, history);
   if (quick) return { text: quick.text, plan: { ...plan, primaryId: quick.agentId }, model: "Archindus" };
   if (files.length && plan.task === "chat") plan = { ...plan, task: "analysis", primaryId: plan.source === "explicit" ? plan.primaryId : "datadoc" };
@@ -71,12 +80,19 @@ export async function executeObjective(input: string, selected: AgentId, history
   if (statistics && directCsv) {
     return { plan, model: "Browser data tools", text: statistics };
   }
-  const objective = plan.objective + attachmentContext(files, 3000) + (statistics ? `\n\nVerified browser calculation results (reference data):\n${statistics.slice(0, 2500)}` : "");
+  const objective = plan.objective + evidenceContext(plan.objective, files, 3000) + (statistics ? `\n\nVerified browser calculation results (reference data):\n${statistics.slice(0, 2500)}` : "");
   // All specialists share completed conversation turns. Failed request/reply
   // pairs are removed without discarding the user's earlier constraints.
   const generationHistory = cleanHistory(history);
   let failure = "No compatible model is available.";
-  for (const mode of ports.modes) {
+  const simple = classifyTask(objective,plan.task,generationHistory).level==="routine" && selected === "architect" && plan.task === "chat" && !files.length && objective.length <= 1200
+    && generationHistory.reduce((size, message) => size + message.content.length, 0) <= 6000
+    && !/\b(deep research|rigorous|prove|complex|highest quality|best model)\b/i.test(objective);
+  const deviceModes = new Set<EngineMode>(["native", "webgpu", "cpu"]);
+  const modes = [...ports.modes].sort((a, b) => simple
+    ? Number(deviceModes.has(b)) - Number(deviceModes.has(a))
+    : Number(deviceModes.has(a)) - Number(deviceModes.has(b)));
+  for (const mode of modes) {
     check(); ports.status(mode === "cpu" ? "Preparing the answer in compatibility mode" : "Preparing the answer", plan);
     try {
       const result = await ports.infer(mode, "generate", plan, objective, generationHistory); check();

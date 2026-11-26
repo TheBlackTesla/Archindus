@@ -1,3 +1,5 @@
+import {handleProjects,type ProjectBucket} from './source-projects';
+import {MAX_CONVERSATION_MESSAGES,MAX_CONVERSATION_BYTES} from '../app/archindus/conversation-limits';
 import {emailIdentity} from './request-identity';
 import {PERSONALITY_CAPABILITIES,personalityContext,type Personality} from '../app/archindus/personalities';
 import { z } from 'zod';
@@ -15,20 +17,22 @@ export function accountIdentity(request:Request){
  if(request.headers.get('oai-authenticated-user-full-name-encoding')==='percent-encoded-utf-8')try{name=decodeURIComponent(name)}catch{name=''}
  return {id,name:name.slice(0,120),email:request.headers.get('oai-authenticated-user-email')??'',provider:'chatgpt' as const};
 }
+class AccountPayloadTooLarge extends Error {}
 export async function boundedAccountJson(request:Request,max=180_000){
  const reader=request.body?.getReader();if(!reader)throw Error('Missing request');
  let total=0,text='';const decoder=new TextDecoder();
- try{while(true){const p=await reader.read();if(p.done)break;total+=p.value.length;if(total>max){await reader.cancel();throw Error('Request too large')}text+=decoder.decode(p.value,{stream:true})}return JSON.parse(text+decoder.decode())}finally{reader.releaseLock()}
+ try{while(true){const p=await reader.read();if(p.done)break;total+=p.value.length;if(total>max){await reader.cancel();throw new AccountPayloadTooLarge('Request too large')}text+=decoder.decode(p.value,{stream:true})}return JSON.parse(text+decoder.decode())}finally{reader.releaseLock()}
 }
 type ProfileRow={data_version:string;display_name:string;instructions:string;memory_enabled:number;history_enabled:number;model_policy:ModelPolicy};
 const settings=(p:ProfileRow)=>({displayName:p.display_name,instructions:p.instructions,memoryEnabled:!!p.memory_enabled,historyEnabled:!!p.history_enabled,modelPolicy:p.model_policy});
-const profileSchema=z.object({displayName:z.string().trim().max(120),instructions:z.string().max(3000),memoryEnabled:z.boolean(),historyEnabled:z.boolean(),modelPolicy:z.enum(['auto','economy','quality'])}).strict();
+const profileSchema=z.object({displayName:z.string().trim().max(120),instructions:z.string().max(3000),memoryEnabled:z.boolean(),historyEnabled:z.boolean(),modelPolicy:z.enum(['auto','economy','quality'])}).partial().strict().refine(value=>Object.keys(value).length>0);
 const uuid=z.string().uuid();
 const personalitySchema=z.object({nodeSlot:z.number().int().min(0).max(19).nullable().optional(),name:z.string().trim().min(1).max(60),description:z.string().trim().min(1).max(180),instructions:z.string().trim().min(1).max(2400),capability:z.enum(PERSONALITY_CAPABILITIES),modelPolicy:z.enum(['inherit','economy','quality'])}).strict();
 const personalityColumns='id,node_slot AS nodeSlot,name,description,instructions,capability,model_policy AS modelPolicy,created_at AS createdAt';
-const messageSchema=z.object({id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),personalityId:uuid.optional(),personalityName:z.string().max(60).optional(),model:z.string().max(400).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
+const receiptSchema=z.object({policyVersion:z.string().max(60).optional(),shadowPolicyVersion:z.string().max(60).optional(),attempts:z.array(z.object({model:z.string().max(250),outcome:z.enum(['complete','invalid_output','unavailable','rate_limit','authentication','credits','model_unavailable','invalid_request','service_unavailable','blocked','refused']),elapsedMs:z.number().nonnegative().max(3600000),reservedMicrodollars:z.number().int().nonnegative(),chargedMicrodollars:z.number().int().nonnegative().optional()})).max(6)});
+const messageSchema=z.object({completedAt:z.number().int().nonnegative().max(8640000000000000).optional(),searchSuggestions:z.string().max(40000).optional(),receipt:receiptSchema.optional(),routeReason:z.string().max(1000).optional(),id:z.string().max(80),role:z.enum(['user','assistant']),content:z.string().max(16000),status:z.enum(['complete','stopped','error']),sourceText:z.string().max(16000).optional(),agentId:z.string().max(30).optional(),selectedAgentId:z.string().max(30).optional(),personalityId:uuid.optional(),personalityName:z.string().max(60).optional(),model:z.string().max(400).optional(),task:z.string().max(30).optional(),objective:z.string().max(16000).optional()});
 
-export async function handleAccount(request:Request,db:AccountDb|undefined,options:{credentialsKey?:string}={}){
+export async function handleAccount(request:Request,db:AccountDb|undefined,options:{credentialsKey?:string;bucket?:ProjectBucket}={}){
  const path=new URL(request.url).pathname.split('/').filter(Boolean).slice(2);
  const user=accountIdentity(request);
  if(!user)return path.length===0&&request.method==='GET'?json({authenticated:false,settings:DEFAULT_SETTINGS,memories:[]}):json({error:'Sign in to access your account.'},401);
@@ -49,18 +53,28 @@ export async function handleAccount(request:Request,db:AccountDb|undefined,optio
    }
    if(request.method==='PATCH'){
     const s=profileSchema.parse(await boundedAccountJson(request,20_000));
-    await db.prepare('UPDATE account_profiles SET display_name=?,instructions=?,memory_enabled=?,history_enabled=?,model_policy=?,updated_at=? WHERE user_id=? AND data_version=?').bind(s.displayName,s.instructions,Number(s.memoryEnabled),Number(s.historyEnabled),s.modelPolicy,Date.now(),user.id,profile.data_version).run();
-    return json({settings:s});
+    const updated=await db.prepare(`UPDATE account_profiles SET
+      display_name=COALESCE(?,display_name), instructions=COALESCE(?,instructions),
+      memory_enabled=COALESCE(?,memory_enabled), history_enabled=COALESCE(?,history_enabled),
+      model_policy=COALESCE(?,model_policy), updated_at=? WHERE user_id=? AND data_version=? RETURNING *`)
+      .bind(s.displayName??null,s.instructions??null,s.memoryEnabled===undefined?null:Number(s.memoryEnabled),
+        s.historyEnabled===undefined?null:Number(s.historyEnabled),s.modelPolicy??null,Date.now(),user.id,profile.data_version).first<ProfileRow>();
+    return updated?json({settings:settings(updated)}):json({error:'Your account changed. Refresh before saving more data.'},409);
    }
    if(request.method==='DELETE'){
     const body=await boundedAccountJson(request,1000);if(body.confirm!=='DELETE')return json({error:'Type DELETE to confirm.'},400);
+    const projects=await db.prepare('SELECT object_key FROM source_projects WHERE user_id=?').bind(user.id).all<{object_key:string}>();
+    if(projects.results.length&&!options.bucket)return json({error:'Project storage unavailable. Retry deletion shortly.'},503);
     await db.batch([
-     ...['account_memories','account_conversations','account_personalities','media_jobs','account_integrations'].map(table=>db.prepare(`DELETE FROM ${table} WHERE user_id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)`).bind(user.id,user.id,profile.data_version)),
+     ...['account_memories','account_conversations','account_personalities','media_jobs','account_integrations','account_routing_feedback','source_projects'].map(table=>db.prepare(`DELETE FROM ${table} WHERE user_id=? AND EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND data_version=?)`).bind(user.id,user.id,profile.data_version)),
      db.prepare('DELETE FROM account_profiles WHERE user_id=? AND data_version=?').bind(user.id,profile.data_version),
     ]);
+    if(projects.results.length)await options.bucket!.delete(projects.results.map(p=>p.object_key));
     return json({deleted:true});
    }
   }
+  if(path[0]==='projects')return await handleProjects(request,db,options.bucket,user.id,profile.data_version,path);
+  if(path[0]==='feedback'&&path.length===1){const {adaptiveAccount}=await import('./inference/adaptive');return await adaptiveAccount(request,db,user.id,profile.data_version,path[0])}
   if(path[0]==='integrations'){const {handleIntegrations}=await import('./inference/integrations');return handleIntegrations(request,db,user.id,profile.data_version,path,options.credentialsKey)}
   if(path[0]==='personalities'&&path.length<=2){
    const id=path[1]?uuid.parse(path[1]):undefined;
@@ -104,7 +118,7 @@ export async function handleAccount(request:Request,db:AccountDb|undefined,optio
     const list=await db.prepare('SELECT id,title,updated_at AS updatedAt FROM account_conversations WHERE user_id=? ORDER BY updated_at DESC LIMIT 100').bind(user.id).all();return json({conversations:list.results});
    }
    if(request.method==='PUT'&&id){
-    const value=z.object({messages:z.array(messageSchema).min(1).max(40)}).strict().parse(await boundedAccountJson(request));
+    const value=z.object({messages:z.array(messageSchema).min(1).max(MAX_CONVERSATION_MESSAGES)}).strict().parse(await boundedAccountJson(request,MAX_CONVERSATION_BYTES));
     const title=(value.messages.find(m=>m.role==='user')?.content??'Conversation').slice(0,100);
     const row=await db.prepare(`INSERT INTO account_conversations(id,user_id,title,messages,updated_at)
      SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM account_profiles WHERE user_id=? AND history_enabled=1 AND data_version=?)
@@ -115,16 +129,17 @@ export async function handleAccount(request:Request,db:AccountDb|undefined,optio
    }
    if(request.method==='DELETE'){
     await boundedAccountJson(request,1000);
+    await db.prepare(id?'DELETE FROM account_routing_feedback WHERE user_id=? AND item LIKE ?':'DELETE FROM account_routing_feedback WHERE user_id=?').bind(...(id?[user.id,id+'/%']:[user.id])).run();
     await db.prepare(id?'DELETE FROM account_conversations WHERE user_id=? AND id=?':'DELETE FROM account_conversations WHERE user_id=?').bind(...(id?[user.id,id]:[user.id])).run();return json({deleted:true});
    }
   }
   if(path[0]==='export'&&path.length===1&&request.method==='GET'){
    const memories=await db.prepare('SELECT id,content,created_at AS createdAt FROM account_memories WHERE user_id=?').bind(user.id).all();
    const conversations=await db.prepare('SELECT id,title,messages,updated_at AS updatedAt FROM account_conversations WHERE user_id=?').bind(user.id).all<{id:string;title:string;messages:string;updatedAt:number}>();
-   return new Response(JSON.stringify({product:'Archindus',exportedAt:new Date().toISOString(),user:{email:user.email},settings:settings(profile),memories:memories.results,personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=?`).bind(user.id).all()).results,conversations:conversations.results.map(c=>({...c,messages:JSON.parse(c.messages)}))},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="archindus-data.json"','Cache-Control':'no-store'}});
+   return new Response(JSON.stringify({routingFeedback:(await db.prepare('SELECT item,model,task,rating FROM account_routing_feedback WHERE user_id=?').bind(user.id).all()).results,projects:(await db.prepare('SELECT id,title,updated_at AS updatedAt FROM source_projects WHERE user_id=?').bind(user.id).all()).results.map(p=>({...p,downloadPath:'/api/account/projects/'+p.id})),product:'Archindus',exportedAt:new Date().toISOString(),user:{email:user.email},settings:settings(profile),memories:memories.results,personalities:(await db.prepare(`SELECT ${personalityColumns} FROM account_personalities WHERE user_id=?`).bind(user.id).all()).results,conversations:conversations.results.map(c=>({...c,messages:JSON.parse(c.messages)}))},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="archindus-data.json"','Cache-Control':'no-store'}});
   }
   return json({error:'Not found.'},404);
- }catch(error){return json({error:error instanceof z.ZodError?'Invalid account data.':'Account data could not be accessed. Please retry.'},error instanceof z.ZodError?400:503)}
+ }catch(error){if(error instanceof AccountPayloadTooLarge)return json({error:'This conversation is too large to save (1.5 MB). Start a new chat; existing saved history is retained.'},413);return json({error:error instanceof z.ZodError?'Invalid account data.':'Account data could not be accessed. Please retry.'},error instanceof z.ZodError?400:503)}
 }
 
 export async function accountPersonalization(db:AccountDb|undefined,user:ReturnType<typeof accountIdentity>,temporary:boolean,personalityId?:string){

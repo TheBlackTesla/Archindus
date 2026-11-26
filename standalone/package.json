@@ -10,15 +10,18 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
     "build": "bash scripts/build-verified.sh",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && node --test --test-concurrency=1 tests/*.test.mjs",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
-    "prebuild": "node scripts/verify-assets.mjs",
-    "predev": "node scripts/verify-assets.mjs"
+    "prebuild": "node scripts/verify-assets.mjs && node scripts/evaluate-routing.mjs",
+    "predev": "node scripts/verify-assets.mjs",
+    "eval:routing": "node scripts/evaluate-routing.mjs",
+    "trial:routing": "node scripts/run-routing-trial.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@hookform/resolvers": "^5.7.1",
+    "@huggingface/inference": "^4.13.32",
     "@huggingface/transformers": "3.8.1",
     "@mlc-ai/web-llm": "0.2.84",
     "@pdf-lib/fontkit": "1.1.1",

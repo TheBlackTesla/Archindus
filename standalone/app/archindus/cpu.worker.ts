@@ -5,7 +5,7 @@ import { withoutAgentSelection } from "./agents";
 import { finalAnswer, modelContext, validateAnswer, type ContextMessage } from "./answer";
 import { type TaskPlan } from "./orchestration";
 import { AnswerStream } from "./stream";
-import { CPU_CHAT, CPU_CODER } from "./device-models";
+import { CPU_CHAT, CPU_CODER, CPU_SMALL } from "./device-models";
 import { cooperativeStep, localPrompt } from "./local-model";
 
 env.allowLocalModels = false;
@@ -38,7 +38,7 @@ self.addEventListener("message", async (event: MessageEvent<Request>) => {
   let recoverable = true;
   try {
     const coding = request.plan.task === "code";
-    const { id, label } = request.modelId === CPU_CODER.id ? CPU_CODER : CPU_CHAT;
+    const { id, label } = request.modelId === CPU_SMALL.id ? CPU_SMALL : request.modelId === CPU_CODER.id ? CPU_CODER : CPU_CHAT;
     if (!generator || currentModel !== id) {
       await generator?.dispose();
       generator = undefined;

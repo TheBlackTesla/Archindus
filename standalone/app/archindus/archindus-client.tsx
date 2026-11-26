@@ -1,4 +1,7 @@
 "use client";
+import {MAX_CONVERSATION_MESSAGES,checkConversationPayload} from "./conversation-limits";
+import type {RoutingReceipt} from "./routing-receipt";
+import {ResponseFeedback} from "./response-feedback";
 import {runModelLabel} from './run-record';
 import { requestId } from "./request-id";
 
@@ -23,8 +26,10 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Switch } from "@/components/ui/switch";
 import type {PublicModel} from '../../lib/inference/providers';
 import {ProviderConnections} from './provider-connections';
-import {generateWorkerMedia} from './media-runtime';
+import {generateCloudMedia,generateWorkerMedia} from './media-runtime';
 import {RoutingBrain} from "./routing-brain";
+import {livingEntities, requestPath} from "./living-brain";
+import {ObservedRoute} from "./observed-route";
 import {personalityContext,restorePersonalitySelection} from "./personalities";
 import { MediaGallery, type MediaArtifact } from "./media-gallery";
 import { useOracleVoice } from "./use-oracle-voice";
@@ -35,15 +40,13 @@ const STORAGE_KEY = "archindus-native-conversation-v1";
 type ConversationMessage = {
   id: string; role: "user" | "assistant"; content: string; agentId?: AgentId;
   status: "complete" | "generating" | "stopped" | "error"; sourceText?: string;
-  run?: RunRecord; routeReason?: string; model?: string; imageUrl?: string; hadImage?: boolean; objective?: string; task?: TaskKind;
-  attachments?: Array<{ id: string; name: string }>; selectedAgentId?: AgentId; personalityId?:string; personalityName?:string; media?: MediaArtifact[];
+  searchSuggestions?:string; receipt?: RoutingReceipt; run?: RunRecord; routeReason?: string; model?: string; imageUrl?: string; hadImage?: boolean; objective?: string; task?: TaskKind;
+  completedAt?:number; attachments?: Array<{ id: string; name: string }>; selectedAgentId?: AgentId; personalityId?:string; personalityName?:string; media?: MediaArtifact[];
 };
 const INITIAL_MESSAGE: ConversationMessage = { id: "welcome", role: "assistant", agentId: "architect", status: "complete", content: "What would you like to work on?" };
 
 function savedConversation(messages: ConversationMessage[]) {
-  const start = messages.findIndex(message => message.role === "user");
-  const kept = messages.length > 40 && start >= 0 ? [...messages.slice(start, start + 2), ...messages.slice(-38)] : messages;
-  return kept.map(m => ({
+  return messages.map(m => ({
     ...m, imageUrl: undefined, media: undefined,
     status: m.status === "generating" ? "stopped" : m.status,
     content: m.status === "generating" ? "This request was interrupted. Select Retry to continue." : m.role === "assistant" ? finalAnswer(m.content) : m.content,
@@ -56,6 +59,7 @@ export default function ArchindusClient() {
   const threadId=useRef(requestId()),skipPersistence=useRef(false);
   const storageKey=account?.user?.id?`${STORAGE_KEY}:${account.user.id}`:STORAGE_KEY;
   const [brainExpanded,setBrainExpanded]=useState(false);
+  const [brainNode,setBrainNode]=useState<string>();
   const [selectedPersonalityId,setSelectedPersonalityId]=useState<string>();
   const [selectedAgentId, setSelectedAgentId] = useState<AgentId>("architect");
   const [messages, setMessages] = useState<ConversationMessage[]>([INITIAL_MESSAGE]);
@@ -128,7 +132,7 @@ export default function ArchindusClient() {
         setDeviceOnly(localOnly);
         setLastId(localStorage.getItem(LAST_MODEL_KEY) ?? undefined);
         const savedPreference = localStorage.getItem("archindus-model-preference");
-        if (["auto", "small", "balanced", "quality", "cpu"].includes(savedPreference ?? "")) setPreference(savedPreference as ModelPreference);
+        if (["auto", "small", "balanced", "quality", "cpu", "smol"].includes(savedPreference ?? "")) setPreference(savedPreference as ModelPreference);
         let saved:string|null=null;
         if(account?.authenticated&&!localOnly&&account.settings.historyEnabled){
           const data=await accountRequest('/conversations');if(!alive)return;setThreads(data.conversations);
@@ -139,7 +143,7 @@ export default function ArchindusClient() {
           if (Array.isArray(value)) {
             const valid = value.filter((m): m is ConversationMessage => m && typeof m.id === "string" && ["user", "assistant"].includes(m.role) && typeof m.content === "string")
               .map(m => ({ ...m, agentId: m.agentId ? canonicalAgentId(m.agentId) : undefined, selectedAgentId: m.selectedAgentId ? canonicalAgentId(m.selectedAgentId) : undefined, imageUrl: undefined, media: undefined, content: m.role === "assistant" ? finalAnswer(m.content) : m.content, status: m.status === "generating" ? "stopped" as const : m.status ?? "complete" as const }));
-            if (valid.length) { latestMessages.current = valid.slice(-40); setMessages(latestMessages.current); const choice=restorePersonalitySelection(latestMessages.current,account?.personalities??[]);setSelectedAgentId(choice.agentId);setSelectedPersonalityId(choice.personalityId); }
+            if (valid.length) { latestMessages.current = valid.slice(-MAX_CONVERSATION_MESSAGES); setMessages(latestMessages.current); const choice=restorePersonalitySelection(latestMessages.current,account?.personalities??[]);setSelectedAgentId(choice.agentId);setSelectedPersonalityId(choice.personalityId); }
           }
         }
       } catch { setStorageError("Conversation history could not be restored on this browser."); }
@@ -175,7 +179,7 @@ export default function ArchindusClient() {
     if (!hydrated||temporary||isGenerating||skipPersistence.current) return;
     const timer = window.setTimeout(() => {
       try {
-        if(account?.authenticated&&!deviceOnly){if(account.settings.historyEnabled)void saveThread(messages).catch(()=>setStorageError('Your conversation could not be synced. Retry from History.'));}
+        if(account?.authenticated&&!deviceOnly){if(account.settings.historyEnabled)void saveThread(messages).catch(error=>setStorageError(error instanceof Error?error.message:'Your conversation could not be synced. Retry from History.'));}
         else if(!account?.authenticated||account.settings.historyEnabled)localStorage.setItem(storageKey, JSON.stringify(savedConversation(messages)));
       }
       catch { setStorageError("Browser storage is full or unavailable. Download your results before leaving."); }
@@ -217,7 +221,8 @@ export default function ArchindusClient() {
   async function saveThread(value:ConversationMessage[]){
     if(!account?.authenticated||!account.settings.historyEnabled||temporary||deviceOnly||skipPersistence.current||!value.some(m=>m.role==='user'))return;
     const id=threadId.current;
-    const clean=savedConversation(value).map(m=>({id:m.id,role:m.role,content:m.content,status:m.status,sourceText:m.sourceText,agentId:m.agentId,selectedAgentId:m.selectedAgentId,personalityId:m.personalityId,personalityName:m.personalityName,model:m.model,task:m.task,objective:m.objective}));
+    const clean=savedConversation(value).map(m=>({id:m.id,role:m.role,content:m.content,status:m.status,completedAt:m.completedAt,sourceText:m.sourceText,agentId:m.agentId,selectedAgentId:m.selectedAgentId,personalityId:m.personalityId,personalityName:m.personalityName,model:m.model,task:m.task,objective:m.objective,receipt:m.receipt,routeReason:m.routeReason,searchSuggestions:m.searchSuggestions}));
+    checkConversationPayload(clean);
     await accountRequest('/conversations/'+id,'PUT',{messages:clean});
     const list=await accountRequest('/conversations');setThreads(list.conversations);setStorageError('');
   }
@@ -243,6 +248,7 @@ export default function ArchindusClient() {
     skipPersistence.current=false;
     voice.stop(); setGalleryOpen(false);
     const existing = latestMessages.current;
+    if(!replaceId&&existing.length+2>MAX_CONVERSATION_MESSAGES){setStorageError("This conversation has reached 500 messages. Start a new chat to continue; your saved history is retained.");return;}
     const replaceIndex = replaceId ? existing.findIndex(m => m.id === replaceId) : -1;
     const original = replaceIndex >= 0 ? existing[replaceIndex] : undefined;
     const history = replaceIndex >= 1 ? existing.slice(0, replaceIndex - 1) : existing;
@@ -289,9 +295,14 @@ export default function ArchindusClient() {
       runtime.current.preference = preference;
       runtime.current.cachedOnly = true;
       hostedRuntime.current ??= new HostedRuntime();
+      let verifiedRouteReason:string|undefined;
       hostedRuntime.current.beginUserRequest();
       hostedRuntime.current.temporary=temporary;
+      hostedRuntime.current.referenceOnly=attached.length>0;
       hostedRuntime.current.personalityId=personalityId;
+      hostedRuntime.current.onSearchSuggestions=searchSuggestions=>{if(!abort.signal.aborted&&controller.current===abort)patch(id,{searchSuggestions})};
+      hostedRuntime.current.onReceipt=receipt=>{if(!abort.signal.aborted&&controller.current===abort)patch(id,{receipt})};
+      hostedRuntime.current.onRoute=routeReason=>{verifiedRouteReason=routeReason;if(!abort.signal.aborted&&controller.current===abort)patch(id,{routeReason})};
       hostedRuntime.current.onModel=model=>{if(!abort.signal.aborted&&controller.current===abort)patch(id,{model})};
       const modes=chatModes({deviceOnly,qwen:qwenOnline,hosted:hostedAvailable,native,ready:runtime.current.readyMode,saved:usable.map(m=>m.mode)});
       const task=fallbackPlan(objective,selected,history).task;
@@ -335,8 +346,8 @@ export default function ArchindusClient() {
           setProgressText("Opening saved model files");
           return runtime.current!.request(mode, action, plan, context, prompt, abort.signal, onPartial);
         },
-        video:async prompt=>{if(deviceOnly)throw Error('Video generation requires a connected GPU workflow in Automatic mode.');beginAttempt('ComfyUI · video');const result=await generateWorkerMedia('video',prompt,{version:account?.user?.version,personalityId,signal:abort.signal,status:setProgressText,onModel:model=>patch(id,{model})});return {video:result.blob,model:result.model}},
-        image:async prompt=>{if(!deviceOnly&&account?.authenticated&&providerModels.some(m=>m.kind==='image'&&m.configured&&m.provider==='comfyui')){beginAttempt('ComfyUI · image');try{const result=await generateWorkerMedia('image',prompt,{version:account.user?.version,personalityId,signal:abort.signal,status:setProgressText,onModel:model=>patch(id,{model})});return {image:result.blob,model:result.model}}catch(e){if(!(e instanceof Error)||e.name!=='MediaUnavailable')throw e}}
+        video:async prompt=>{if(deviceOnly)throw Error('Video generation requires a connected GPU workflow in Automatic mode.');if(providerModels.some(m=>m.kind==='video'&&m.configured&&['huggingface-media','openrouter-media'].includes(m.provider))){beginAttempt('Hugging Face · video');setProgressText('Ounumi is generating your video');const result=await generateCloudMedia('video',prompt,abort.signal);return {video:result.blob,model:result.model}}beginAttempt('ComfyUI · video');const result=await generateWorkerMedia('video',prompt,{version:account?.user?.version,personalityId,signal:abort.signal,status:setProgressText,onModel:model=>patch(id,{model})});return {video:result.blob,model:result.model}},
+        image:async prompt=>{if(!deviceOnly&&providerModels.some(m=>m.kind==='image'&&m.configured&&['huggingface-media','openrouter-media'].includes(m.provider))){beginAttempt('Hugging Face · image');setProgressText('Ounumi is generating your image');const result=await generateCloudMedia('image',prompt,abort.signal);return {image:result.blob,model:result.model}}if(!deviceOnly&&account?.authenticated&&providerModels.some(m=>m.kind==='image'&&m.configured&&m.provider==='comfyui')){beginAttempt('ComfyUI · image');try{const result=await generateWorkerMedia('image',prompt,{version:account.user?.version,personalityId,signal:abort.signal,status:setProgressText,onModel:model=>patch(id,{model})});return {image:result.blob,model:result.model}}catch(e){if(!(e instanceof Error)||e.name!=='MediaUnavailable')throw e}}
         return imageWithFallback(!deviceOnly ? async () => {
           beginAttempt("Hosted image API"); setProgressText("Ounumi is generating your image");
           const result = await hostedRuntime.current!.request("image", "ounumi", prompt, [], abort.signal);
@@ -363,7 +374,7 @@ export default function ArchindusClient() {
       });
       const imageUrl = media[0]?.url;
       const last=attempts.at(-1); if(last)last.state="completed";
-      patch(id, { run:record(last?.engine??(result.model==="Archindus"?"Built-in reply":"Browser tool")), content: finalAnswer(result.text), status: "complete", agentId: result.plan.primaryId, routeReason: result.plan.reason, model: result.model, imageUrl, media, hadImage: Boolean(imageUrl), objective: result.plan.objective, task: result.plan.task });
+      patch(id, { run:record(last?.engine??(result.model==="Archindus"?"Built-in reply":"Browser tool")), content: finalAnswer(result.text), completedAt:Date.now(), status: "complete", agentId: result.plan.primaryId, routeReason: verifiedRouteReason??result.plan.reason, model: result.model, imageUrl, media, hadImage: Boolean(imageUrl), objective: result.plan.objective, task: result.plan.task });
       setProgressText("Ready when you are"); setProgress(100);
       voice.speak(result.text);
     } catch (error) {
@@ -447,6 +458,20 @@ export default function ArchindusClient() {
     setActiveMessageId(answers[Math.max(0, Math.min(answers.length - 1, activeIndex + direction))]?.id ?? null);
   };
 
+  const brainNodes = livingEntities(account?.personalities ?? [], {
+    hosted: hostedAvailable, deviceOnly,
+    openAIConfigured: providerModels.find(m => m.provider === 'openai')?.configured,
+    extraModels: providerModels.filter(m => m.provider !== 'openai'),
+    privateOnline: qwenOnline, native,
+    localModels: usable.map(m => ({ id: m.id, label: m.label })),
+  }, activeMessage?.model, activeMessage?.receipt?.attempts.map(attempt => attempt.model));
+  const routePath = requestPath(activeMessage, brainNodes);
+  const inspectRouteNode = (id: string) => {
+    setBrainNode(id);
+    setBrainExpanded(true);
+    requestAnimationFrame(() => document.getElementById('archindus-neural-brain')?.scrollIntoView({ block: 'start' }));
+  };
+
   return <main className={`oracle-app ${brainExpanded?"brain-expanded":""} ${activeMessage || galleryOpen ? "oracle-has-response" : "oracle-empty"}`} data-state={oracleState}>
     <header className="oracle-header">
       <Link href="https://architectindustries.com" className="oracle-brand" aria-label="Archindus — return to Architect Industries"><span className="oracle-brand-mark" aria-hidden="true">⌁</span>ARCHINDUS</Link>
@@ -465,11 +490,12 @@ export default function ArchindusClient() {
         </Sheet>
         <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetTrigger asChild><button type="button" className="oracle-icon" aria-label="Settings" title="Settings" disabled={!hydrated}><Settings2 size={18} /></button></SheetTrigger>
           <SheetContent className="oracle-sheet oracle-settings-sheet"><SheetHeader><SheetTitle>Settings</SheetTitle><SheetDescription>Your Archindus account, personalization, and data.</SheetDescription></SheetHeader>
+            <a className="oracle-workspace-link" href="/workspace">Document workspace</a>
             <AccountSettings state={accountState} onClear={async()=>{skipPersistence.current=true;stop();await accountRequest('/conversations','DELETE',{});resetConversation();setThreads([])}} onDelete={()=>{skipPersistence.current=true;resetConversation();window.location.assign('/signout-with-chatgpt?return_to=%2F')}}>
             <div className="oracle-settings-body">
               <section><div className="oracle-switch-row"><label htmlFor="oracle-voice-switch">Voice responses</label><Switch id="oracle-voice-switch" checked={voice.enabled} disabled={!voice.supported} onCheckedChange={voice.toggle} /></div><p>{voice.supported ? deviceOnly ? 'Uses a local device voice. No response text is sent to ElevenLabs in this mode.' : voice.remoteConfigured ? 'Archindus’s main ElevenLabs voice reads responses aloud. When Voice is on, spoken answer text is sent to ElevenLabs. Sign in to use it. Provider retention policies apply.' : 'Uses your browser’s speech service. Automatic selection prefers a South African or European English female voice when available.' : "Speech playback is unavailable in this browser."}</p>{deviceOnly||!voice.remoteConfigured?<><label htmlFor="archindus-browser-voice">Browser voice</label><select id="archindus-browser-voice" value={voice.voiceOptions.some(v=>v.voiceURI===voice.selectedVoiceURI)?voice.selectedVoiceURI:''} onChange={e=>voice.chooseVoice(e.target.value)}><option value="">Automatic · South African / European female preference</option>{voice.voiceOptions.map(v=><option key={v.voiceURI+'|'+v.lang} value={v.voiceURI}>{v.name} · {v.lang}{v.localService?' · on device':''}</option>)}</select><p>{voice.browserVoice?'Selected: '+voice.browserVoice.name+' ('+voice.browserVoice.lang+').':'Waiting for browser voices.'} {!voice.selectedVoiceURI&&voice.browserVoice&&!voice.preferredVoiceAvailable?'No recognized matching female voice is available; using the closest available voice. You can choose another above.':''} Voice availability varies by browser and device.</p></>:null}</section>
               <section><label htmlFor="oracle-processing">Where to run</label><select id="oracle-processing" value={deviceOnly?"device":"auto"} disabled={isGenerating||!hydrated} onChange={e=>chooseProcessing(e.target.value)}><option value="auto">Automatic · no model downloads</option><option value="device">This device only</option></select><p>Automatic can send your request, conversation context, and relevant file excerpts to a connected service. Choose this device only to keep inference local. Neither mode downloads model weights during chat.</p></section>
-              <section><label htmlFor="oracle-model">Optional local model</label><select id="oracle-model" value={preference==="small"?"auto":preference} disabled={isGenerating} onChange={e=>chooseModel(e.target.value as ModelPreference)}><option value="auto">Recommended · reuse saved model</option><option value="cpu">Compatible · Qwen2.5 0.5B CPU</option><option value="balanced" disabled={gpuAvailable===false}>Balanced · Qwen3 1.7B GPU</option><option value="quality" disabled={gpuAvailable===false}>Higher capacity · Qwen3 4B GPU</option></select>
+              <section><label htmlFor="oracle-model">Optional local model</label><select id="oracle-model" value={preference==="small"?"auto":preference} disabled={isGenerating} onChange={e=>chooseModel(e.target.value as ModelPreference)}><option value="auto">Recommended · reuse saved model</option><option value="smol">Lightweight · SmolLM2 360M CPU</option><option value="cpu">Compatible · Qwen2.5 0.5B CPU</option><option value="balanced" disabled={gpuAvailable===false}>Balanced · Qwen3 1.7B GPU</option><option value="quality" disabled={gpuAvailable===false}>Higher capacity · Qwen3 4B GPU</option></select>
                 <div className="oracle-cache-card"><div><strong>{catalog==="checking"?"Checking device storage":warm?"Loaded in memory":saved?"Model files detected":catalog==="unavailable"?"Reusable storage unavailable":"No saved files for this model"}</strong><small>{target.label}</small></div>
                 {preparingBrowser?<button type="button" onClick={stop}>Stop setup</button>:<button type="button" disabled={isGenerating||catalog!=="checked"||gpuAvailable===null||warm} onClick={()=>void prepareBrowser(!saved||repair)}>{warm?"Ready":saved&&!repair?"Use saved files":repair?"Repair missing files":"Download missing files"}</button>}</div>
                 {preparingBrowser?<p role="status">{progressText}{progress>0?" · "+Math.round(progress)+"%":""}</p>:null}
@@ -490,7 +516,7 @@ export default function ArchindusClient() {
     </header>
 
     <div className="oracle-stage">
-      <RoutingBrain expanded={brainExpanded} onExpandedChange={setBrainExpanded} state={oracleState} activity={neuralActivity} run={activeMessage??undefined} runs={answers} runtime={{openAIConfigured:providerModels.find(m=>m.provider==='openai')?.configured,extraModels:providerModels.filter(m=>m.provider!=='openai'),privateOnline:qwenOnline,native,localModels:usable.map(m=>({id:m.id,label:m.label}))}} selectedAgentId={selectedAgentId} selectedPersonalityId={selectedPersonalityId} onSelect={(a,p)=>{setSelectedAgentId(a);setSelectedPersonalityId(p)}} account={account} refreshAccount={accountState.refresh} deviceOnly={deviceOnly} hostedAvailable={hostedAvailable} busy={isGenerating}/>
+      <RoutingBrain expanded={brainExpanded} onExpandedChange={setBrainExpanded} state={oracleState} activity={neuralActivity} run={activeMessage??undefined} runs={answers} nodes={brainNodes} path={routePath} selected={brainNode} onSelectedChange={setBrainNode} selectedAgentId={selectedAgentId} selectedPersonalityId={selectedPersonalityId} onSelect={(a,p)=>{setSelectedAgentId(a);setSelectedPersonalityId(p)}} account={account} refreshAccount={accountState.refresh} deviceOnly={deviceOnly} hostedAvailable={hostedAvailable} busy={isGenerating}/>
       {!brainExpanded && !activeMessage && !galleryOpen ? <div className="oracle-presence"><span>ARCHITECT INDUSTRIES / ARCHINDUS</span><h1>What do you want to accomplish?</h1></div> : null}
     </div>
 
@@ -509,13 +535,15 @@ export default function ArchindusClient() {
             {activeIndex === answers.length - 1 ? <button type="button" disabled={isGenerating || uploading} onClick={() => void executePrompt(activeMessage.sourceText ?? "", activeMessage.id)}><RotateCcw size={15} />{activeMessage.status === "error" || activeMessage.status === "stopped" ? "Retry" : "Regenerate"}</button> : null}
             {activeMessage.status === "complete" && !activeMessage.hadImage ? <details className="oracle-save"><summary>Save response</summary><ArtifactCards text={activeMessage.content} /></details> : null}
           </div>
+          {activeMessage.searchSuggestions?<iframe title="Google Search suggestions" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" style={{width:'100%',height:150,border:0}} srcDoc={'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src https: data:; font-src https:;">'+activeMessage.searchSuggestions}/>:null}
+          {account?.authenticated&&account.settings.historyEnabled&&!temporary&&!deviceOnly&&activeMessage.status==="complete"&&activeMessage.model?<ResponseFeedback key={activeMessage.id} conversationId={threadId.current} messageId={activeMessage.id} save={()=>saveThread(latestMessages.current)}/>:null}
           {activeMessage.status === "complete" && /```/.test(activeMessage.content) ? <div className="oracle-source-files"><ArtifactCards text={activeMessage.content} compact /></div> : null}
           {activeMessage.run||activeMessage.routeReason||activeMessage.model?<details className="oracle-receipt"><summary><Terminal size={15} aria-hidden="true"/><strong>Run details</strong><span>{activeMessage.run?runModelLabel(activeMessage.model)+" · "+duration(activeMessage.run.elapsedMs):runModelLabel(activeMessage.model)}</span></summary>
-            <dl><dt>Task</dt><dd>{activeMessage.task ?? "Conversation"}</dd>
-            <dt>Model</dt><dd>{runModelLabel(activeMessage.model)}</dd>
+            <dl><dt>Task</dt><dd>{activeMessage.task?.replaceAll("_"," ") ?? "Conversation"}</dd>
+            <dt>Model</dt><dd>{runModelLabel(activeMessage.model)}</dd>{activeMessage.receipt?.policyVersion?<><dt>Routing policy</dt><dd>{activeMessage.receipt.policyVersion}</dd><dt>Shadow comparison</dt><dd>{activeMessage.receipt.shadowPolicyVersion??"None"} · observation only</dd></>:null}
             {activeMessage.run?<><dt>First streamed text</dt><dd>{activeMessage.run.firstTextMs!==undefined?duration(activeMessage.run.firstTextMs):"No streamed text"}</dd><dt>End to end</dt><dd>{duration(activeMessage.run.elapsedMs)}</dd></>:null}
-            {activeMessage.run?.attempts.length?<><dt>Attempts</dt><dd>{activeMessage.run.attempts.length}</dd></>:null}</dl>
-            {activeMessage.routeReason?<p>{activeMessage.routeReason}</p>:null}</details>:null}
+            </dl>
+            <ObservedRoute run={activeMessage} path={routePath} nodes={brainNodes} onInspect={inspectRouteNode} /></details>:null}
         </>}
       </article> : null}
     </div> : null}
@@ -524,6 +552,7 @@ export default function ArchindusClient() {
       {(fileError || storageError || voice.error) ? <p className="oracle-notice" role="status">{fileError || voice.error || storageError}</p> : null}
       {files.length ? <ul className="oracle-attachments">{files.map(file => <li key={file.id}><Paperclip size={13} /><span>{file.name}{file.truncated ? " · excerpt" : ""}</span><button type="button" className="oracle-icon" aria-label={`Remove ${file.name}`} onClick={() => setFiles(current => current.filter(f => f.id !== file.id))}><X size={14} /></button></li>)}</ul> : null}
       {!activeMessage&&!galleryOpen?<div className="oracle-examples" aria-label="Example requests">
+        <a className="oracle-workspace-link" href="/workspace">Compare documents</a>
         <button type="button" disabled={!hydrated||isGenerating} onClick={()=>void executePrompt("/route Write a Python function that merges two sorted lists.")}><Network size={15}/>Trace a route</button>
         <button type="button" disabled={!hydrated||isGenerating} onClick={()=>{setInput('/json {"engine":"archindus","local":true,"tasks":["code","analysis"]}');inputRef.current?.focus();}}><Braces size={15}/>Inspect JSON</button>
         <button type="button" disabled={!hydrated||isGenerating} onClick={()=>{setInput("Write a Python function to deduplicate a stream of records by ID. Include a small test.");inputRef.current?.focus();}}><Terminal size={15}/>Write code</button>

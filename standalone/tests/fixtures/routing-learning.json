@@ -1,0 +1,10 @@
+[
+ {"name":"free boundary survives high paid preference","routes":[{"id":"free","free":true,"base":0,"evidence":null},{"id":"paid","free":false,"base":10,"evidence":null}],"expected":"free"},
+ {"name":"cold starts preserve deterministic order","routes":[{"id":"a","free":true,"base":0,"evidence":null},{"id":"b","free":true,"base":0,"evidence":null}],"expected":"a"},
+ {"name":"small samples do not become established winners","routes":[{"id":"established","free":true,"base":0,"evidence":{"n":100,"s":95,"ms":100000,"charged":0,"unknownUsage":0}},{"id":"lucky","free":true,"base":0,"evidence":{"n":4,"s":4,"ms":40,"charged":0,"unknownUsage":0}}],"expected":"established"},
+ {"name":"reliable free model beats failing free model","routes":[{"id":"failing","free":true,"base":0,"evidence":{"n":100,"s":20,"ms":100000,"charged":0,"unknownUsage":0}},{"id":"reliable","free":true,"base":0,"evidence":{"n":100,"s":95,"ms":100000,"charged":0,"unknownUsage":0}}],"expected":"reliable"},
+ {"name":"faster model wins equal validated completion rates","routes":[{"id":"slow","free":true,"base":0,"evidence":{"n":100,"s":90,"ms":5000000,"charged":0,"unknownUsage":0}},{"id":"fast","free":true,"base":0,"evidence":{"n":100,"s":90,"ms":100000,"charged":0,"unknownUsage":0}}],"expected":"fast"},
+ {"name":"known usage beats ambiguous usage on otherwise equal evidence","routes":[{"id":"unknown","free":true,"base":0,"evidence":{"n":100,"s":90,"ms":100000,"charged":0,"unknownUsage":100}},{"id":"known","free":true,"base":0,"evidence":{"n":100,"s":90,"ms":100000,"charged":0,"unknownUsage":0}}],"expected":"known"},
+ {"name":"account preference remains influential within a cost tier","routes":[{"id":"preferred","free":true,"base":0.3,"evidence":null},{"id":"other","free":true,"base":0,"evidence":{"n":100,"s":100,"ms":100000,"charged":0,"unknownUsage":0}}],"expected":"preferred"},
+ {"name":"a paid fallback remains available when no free candidate is eligible","routes":[{"id":"paid","free":false,"base":0,"evidence":null}],"expected":"paid"}
+]

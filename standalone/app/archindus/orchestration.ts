@@ -48,10 +48,11 @@ export function fallbackPlan(input: string, selected: AgentId, history: ContextM
   const imageDetails = (!explicit || explicit === "ounumi") && taskKind(request) === "chat" && previousReply?.content.startsWith("What would you like the image to show?")
     && request && !/^(?:hi|hello|hey|thanks|thank you|cancel|never mind|nevermind|which agent|what agent|write|draft|compose|explain|compare|evaluate|create|make|prepare)\b/i.test(request)
     && !/\?\s*$/.test(request);
+  const textRevision=/\b(?:summari[sz]e|shorten|rephrase|reword|translate|bullet points|one sentence|more concise|make (?:it|that) (?:shorter|concise))\b/i.test(request);
   const inherited = (followup || imageDetails) && previousUser && taskKind(request) === "chat";
   const previousTask = tasks.includes(previousReply?.task as TaskKind) ? previousReply!.task as TaskKind : taskKind(previousObjective ?? "");
-  const objective = imageDetails ? `Create an image of ${request}` : inherited && ["image", "video"].includes(previousTask) ? `${previousObjective}${request ? `\nFollow-up: ${request}` : ""}`.slice(-3500) : input;
-  const task = inherited && !imageDetails ? previousTask : taskKind(objective);
+  const objective = imageDetails ? `Create an image of ${request}` : inherited && !textRevision && ["image", "video"].includes(previousTask) ? `${previousObjective}${request ? `\nFollow-up: ${request}` : ""}`.slice(-3500) : input;
+  const task = inherited && !imageDetails && !textRevision ? previousTask : taskKind(objective);
   let primaryId: AgentId = task === "code" ? "satoshi" : task === "image" || task === "video" ? "ounumi" : task === "analysis" || task === "document" ? "datadoc" : "architect";
   if (task === "chat") {
     if (/\b(strategy|business|roadmap|launch|company|market|growth)\b/i.test(input)) primaryId = "wolf";

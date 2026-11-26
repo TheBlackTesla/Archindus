@@ -7,6 +7,8 @@ export function streamedCompletion(response: Response, options: {
   signal: AbortSignal; cancel: () => void; task: string; model: string;
   settle: (actual?: number) => Promise<void>;
   identity?:{model:{id:string;name:string};provider:string};
+  receipt?:()=>unknown;
+  onOutcome?:(outcome:'complete'|'invalid_output'|'refused',actual?:number,label?:string)=>Promise<void>;
   rates?: {input:number;output:number;cached?:number};
 }) {
   let cancelled = false;
@@ -45,6 +47,8 @@ export function streamedCompletion(response: Response, options: {
       } catch (error) {
         completed = { type: "error", code: error instanceof Error && error.name === "HostedRefusal" ? "content_refused" : "incomplete_stream", error: "The answer was interrupted. Please retry." };
       }
+      try{await options.onOutcome?.(completed.type==='complete'?'complete':completed.code==='content_refused'?'refused':'invalid_output',actual,label)}catch{}
+      if(options.receipt)completed.receipt=options.receipt();
       // Keep the reservation alive through the stream. A missing usage event
       // retains the full amount, including after cancellation or a disconnect.
       try { await options.settle(actual); } catch { console.warn("Streaming inference reservation retained"); }

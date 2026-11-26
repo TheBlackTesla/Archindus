@@ -1,10 +1,12 @@
 import { requestId } from "./request-id";
 import { MAX_DOCUMENT_CHARS, MAX_FILE_BYTES, type Attachment } from "./artifacts";
 
-export async function readAttachment(file: File): Promise<Attachment> {
+export async function readAttachment(file: File, whole = false): Promise<Attachment> {
   if (!file.size || file.size > MAX_FILE_BYTES) throw new Error("Choose a nonempty file up to 5 MB.");
   const extension = file.name.split(".").at(-1)?.toLowerCase();
   let text = ""; let truncated = false;
+  const pages:string[]=[];
+  const charLimit=whole?600_000:MAX_DOCUMENT_CHARS, pageLimit=whole?500:40;
   if (["txt", "md", "csv", "json"].includes(extension ?? "")) {
     text = await file.text();
     if (text.includes("\u0000")) throw new Error("This file contains binary data. Upload a text document instead.");
@@ -27,18 +29,20 @@ export async function readAttachment(file: File): Promise<Attachment> {
     const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), useSystemFonts: true });
     try {
       const pdf = await task.promise;
-      truncated = pdf.numPages > 40;
-      for (let i = 1; i <= Math.min(pdf.numPages, 40); i++) {
+      truncated = pdf.numPages > pageLimit;
+      for (let i = 1; i <= Math.min(pdf.numPages, pageLimit); i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        text += content.items.map(item => "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "").join("") + "\n";
+        const pageText = content.items.map(item => "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "").join("") + "\n";
+        pages.push(pageText); text += pageText;
         page.cleanup();
-        if (text.length > MAX_DOCUMENT_CHARS) { truncated = true; break; }
+        if (text.length > charLimit) { truncated = true; break; }
       }
     } finally { await task.destroy(); }
   } else throw new Error("Supported files: PDF, DOCX, TXT, Markdown, CSV, and JSON.");
   if (!text.trim()) throw new Error("No readable text was found. Scanned PDFs need OCR before upload.");
-  return { id: requestId(), name: file.name.slice(0, 120), text: text.slice(0, MAX_DOCUMENT_CHARS), truncated: truncated || text.length > MAX_DOCUMENT_CHARS };
+  if(whole&&(truncated||text.length>charLimit))throw new Error("Split this file into parts of at most 500 pages and 600,000 text characters each.");
+  return { id: requestId(), name: file.name.slice(0, 120), text: text.slice(0, charLimit), truncated: truncated || text.length > charLimit, ...(pages.length?{pages}: {}) };
 }
 
 export async function exportDocx(text: string): Promise<Blob> {

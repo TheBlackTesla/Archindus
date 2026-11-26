@@ -117,7 +117,7 @@ test("hosted code is filtered, downloadable, parameter-bounded and charged by re
   assert.equal(response.status, 200); const result = await response.json();
   assert.doesNotMatch(result.text, /Private reasoning|think/);
   assert.equal(app.codeArtifacts(result.text)[0].name, "archindus-1.py");
-  assert.equal(payload.model, 'gpt-6.1-sol'); assert.equal(payload.max_completion_tokens, 6000); assert.equal(payload.store, false);
+  assert.equal(payload.model, 'gpt-6.2-sol'); assert.equal(payload.max_completion_tokens, 6000); assert.equal(payload.store, false);
   assert.equal(payload.reasoning_effort,'low');assert.equal(payload.temperature,undefined);
   assert.equal((await db.prepare("SELECT charged FROM inference_usage").first()).charged, 650);
   const fail = await app.handleHosted(request(), dependencies(async () => { throw new Error("timeout"); }));
@@ -154,7 +154,7 @@ test("hosted image returns a validated 1024px PNG with fixed quantity and qualit
   }));
   assert.equal(response.status, 200); assert.equal(response.headers.get("Content-Type"), "image/png");
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
-  assert.equal((await db.prepare("SELECT charged FROM inference_usage").first()).charged, 5020);
+  assert.equal((await db.prepare("SELECT charged FROM inference_usage").first()).charged, 18800);
 });
 
 test("hosted outage falls back locally, cancellation and provider refusals stop execution", async () => {
@@ -270,7 +270,7 @@ test("streamed poems arrive before completion and settle the same budget reserva
   const result = await output;
   assert.equal(result.text, "In circuits, I awaken. 🌙\nIn questions, I remain.");
   const ended = await db.prepare("SELECT active_until, charged FROM inference_usage").first();
-  assert.equal(ended.active_until, 0); assert.equal(ended.charged, 325);
+  assert.equal(ended.active_until, 0); assert.equal(ended.charged, 33);
 });
 
 test("truncated streaming code never completes and unknown usage remains charged", async () => {
@@ -291,7 +291,7 @@ test("online failures try cached browser modes, while local poems use one infere
   const calls = [];
   const ports = { modes: app.inferenceModes(false, false, true), signal: new AbortController().signal, status() {}, async infer(mode, action) { calls.push([mode, action]); throw new Error("Hosted unavailable"); } };
   await assert.rejects(app.executeObjective("Write a poem about your existence", "architect", [], [], ports), /unavailable/);
-  assert.deepEqual(calls, [["hosted", "generate"], ["webgpu", "generate"], ["cpu", "generate"]]);
+  assert.deepEqual(calls, [["webgpu", "generate"], ["cpu", "generate"], ["hosted", "generate"]]);
   calls.length = 0;
   const result = await app.executeObjective("Explain why the sky is blue", "architect", [], [], { ...ports, modes: app.inferenceModes(true, true, true), async infer(mode, action) { calls.push([mode, action]); return { text: "Air scatters blue light more strongly." }; } });
   assert.deepEqual(calls, [["webgpu", "generate"]]);
@@ -331,10 +331,10 @@ test("default browser transport preserves the Window receiver on a real HostedRu
 
 test('personality requests expose actual streaming models and deleted selections never silently fall back',async()=>{
  let sent;const id=crypto.randomUUID(),models=[];
- const runtime=new app.HostedRuntime(async(_url,init)=>{sent=JSON.parse(init.body);return new Response(new Blob([app.encodeEvent({type:'partial',text:'A useful answer',model:'gpt-6.1-sol'}),app.encodeEvent({type:'complete',text:'A useful answer.',model:'gpt-6.1-sol'})]),{headers:{'Content-Type':'text/event-stream'}})});
+ const runtime=new app.HostedRuntime(async(_url,init)=>{sent=JSON.parse(init.body);return new Response(new Blob([app.encodeEvent({type:'partial',text:'A useful answer',model:'gpt-6.2-sol'}),app.encodeEvent({type:'complete',text:'A useful answer.',model:'gpt-6.2-sol'})]),{headers:{'Content-Type':'text/event-stream'}})});
  runtime.personalityId=id;runtime.onModel=model=>models.push(model);
  const plan=app.fallbackPlan('Explain this approach','satoshi',[]);
- assert.equal((await runtime.request('generate','satoshi','Explain this approach',[],new AbortController().signal,plan)).model,'gpt-6.1-sol');assert.equal(sent.personalityId,id);assert.deepEqual(models,['gpt-6.1-sol','gpt-6.1-sol']);
+ assert.equal((await runtime.request('generate','satoshi','Explain this approach',[],new AbortController().signal,plan)).model,'gpt-6.2-sol');assert.equal(sent.personalityId,id);assert.deepEqual(models,['gpt-6.2-sol','gpt-6.2-sol']);
  const unavailable=new app.HostedRuntime(async()=>Response.json({error:'Personality removed.'},{status:404}));unavailable.personalityId=id;
  let localCalls=0;
  await assert.rejects(app.executeObjective('Explain a database indexing approach','satoshi',[],[],{modes:['hosted','cpu'],signal:new AbortController().signal,status:()=>{},infer:async mode=>{if(mode==='cpu'){localCalls++;return {text:'Must not run'}}return unavailable.request('generate','satoshi','Explain a database indexing approach',[],new AbortController().signal,plan)},image:async()=>new Blob()}),e=>e.name==='PersonalityUnavailable');assert.equal(localCalls,0);

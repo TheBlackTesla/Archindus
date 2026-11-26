@@ -2,7 +2,7 @@ import { requestId as makeRequestId } from "./request-id";
 import type { ContextMessage } from "./answer";
 import type { TaskPlan } from "./orchestration";
 
-export type ModelPreference = "auto" | "small" | "balanced" | "quality" | "cpu";
+export type ModelPreference = "auto" | "small" | "balanced" | "quality" | "cpu" | "smol";
 export type RuntimeReport = { type: string; requestId?: string; text?: string; progress?: number; model?: string; modelId?: string; plan?: TaskPlan; error?: string; recoverable?: boolean };
 class RuntimeFailure extends Error {}
 export class BrowserRuntime {

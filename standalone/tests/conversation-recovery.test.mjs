@@ -172,7 +172,7 @@ test('hosted outage reaches cached CPU with retained context and stops on succes
       return {text:'Cedar rests in teal light.', model:'Saved CPU'};
     }
   });
-  assert.deepEqual(calls,['hosted','webgpu','cpu']);
+  assert.deepEqual(calls,['webgpu','cpu']);
   assert.equal(result.model,'Saved CPU');
 });
 

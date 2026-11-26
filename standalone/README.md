@@ -57,7 +57,7 @@ Saved memory is explicit: use Settings or say “Remember that…” in a signed
 cloud chat. It is never silently inferred. Temporary chats do not save or use
 memory or cloud history. Device-only processing disables cloud history sync.
 
-Saved text history is bounded to 100 conversations with up to 40 messages each.
+Saved text history is bounded to 100 conversations with up to 500 messages each, bounded to 1.5 MB per saved conversation. Model context remains separately bounded; configured model count does not increase a model’s context window.
 Guests keep a device-local current conversation. File contents and generated
 media remain in the current tab; download before leaving. A new origin has its
 own browser model cache. Deleted media and file contents are not restored from

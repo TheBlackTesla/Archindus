@@ -146,10 +146,11 @@
 .oracle-settings-body select { display: block; padding: 11px 10px; width: 100%; background: #121a20; border: 1px solid #384652; border-radius: 8px; color: #cfdee8; font-size: 14px; }
 .oracle-switch-row { display: flex; justify-content: space-between; align-items: center; }
 .oracle-switch-row label { margin: 0; }
-.oracle-sheet [data-slot="switch"] { background: #35414a; width: 36px; height: 22px; }
+.oracle-sheet [data-slot="switch"] { box-sizing: border-box; display: inline-flex; justify-content: flex-start; align-items: center; width: 36px; height: 22px; padding: 0; border: 2px solid transparent; overflow: hidden; background: #35414a; }
 .oracle-sheet [data-slot="switch"][data-state="checked"] { background: #a5d3ef; }
-.oracle-sheet [data-slot="switch-thumb"] { background: #edf6fc; width: 18px; height: 18px; }
+.oracle-sheet [data-slot="switch-thumb"] { background: #edf6fc; width: 18px; height: 18px; flex: none; translate: none; transform: translateX(0); }
 .oracle-sheet [data-slot="switch-thumb"][data-state="checked"] { background: #152a38; transform: translateX(14px); }
+.oracle-sheet [data-slot="switch-thumb"]:dir(rtl)[data-state="checked"] { transform: translateX(-14px); }
 .oracle-system-details { margin-top: 22px; }
 .oracle-system-details summary { font-size: 14px; cursor: pointer; }
 .oracle-system-details dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; margin-top: 18px; }
@@ -240,12 +241,12 @@
 .oracle-has-response {height:max(640px,100dvh);grid-template-rows:70px minmax(90px,.48fr) minmax(240px,1.52fr) auto;}
 .oracle-has-response .oracle-result {max-height:none;padding-bottom:14px;}
 .oracle-answer {animation-duration:.18s;}
-.oracle-receipt {margin:18px 0 2px;border-block:1px solid #263132;color:#b6c7c6;overflow-wrap:anywhere;}
+.oracle-receipt {margin:18px 0 2px;color:#b6c7c6;overflow-wrap:anywhere;}
 .oracle-receipt summary {cursor:pointer;display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px;padding:13px 1px;}
-.oracle-receipt summary::after {content:"+";margin-left:3px;color:#a8c5c2;}
-.oracle-receipt[open] summary::after {content:"−";}
+.oracle-receipt > summary::after {content:"›";margin-left:3px;color:#a8c5c2;}
+.oracle-receipt[open] > summary::after {transform:rotate(90deg);}
 .oracle-receipt summary strong {color:#e1e9e8;font-weight:500;}
-.oracle-receipt summary span {margin-left:auto;color:#a9c7c4;font:12px/1.6 ui-monospace,monospace;}
+.oracle-receipt > summary span {margin-left:auto;color:#a9c7c4;font:12px/1.6 ui-monospace,monospace;}
 .oracle-receipt dl {display:grid;grid-template-columns:minmax(95px,.6fr) minmax(0,1.8fr);gap:7px 15px;margin:0 0 12px;font:13px/1.65 ui-monospace,monospace;}
 .oracle-receipt dd {margin:0;color:#d4e3e0;}
 .oracle-receipt p {color:#9faeae;font-size:14px;line-height:1.6;margin:5px 0 16px;}
@@ -255,3 +256,14 @@
 .oracle-cache-card small {margin-top:4px;color:#b1c9c4;font:12px/1.5 ui-monospace,monospace;}
 .oracle-cache-card button {border:1px solid #577871;border-radius:6px;padding:8px;font-size:13px;color:#daf0e9;background:#182a25;}
 @media(max-width:640px){.oracle-header-label{display:none}.oracle-examples{gap:5px;margin:8px 0 12px}.oracle-examples button{font-size:13px;gap:5px;padding:8px}.oracle-has-response{min-height:530px;height:max(530px,100dvh);grid-template-rows:58px minmax(70px,.28fr) minmax(170px,1.72fr) auto}}
+
+/* Keep the brand centered without colliding with account controls. */
+.oracle-header{flex-wrap:wrap;justify-content:center;padding-top:12px;padding-bottom:12px;}
+.oracle-header .oracle-brand{flex-basis:100%;justify-content:center;}
+.oracle-header .oracle-toolbar{margin-inline:auto;justify-content:center;}
+.oracle-app{grid-template-rows:112px minmax(200px,1fr) minmax(0,max-content) auto;}
+.oracle-app.oracle-empty{grid-template-rows:112px minmax(240px,1fr) auto;}
+.oracle-app.oracle-has-response{grid-template-rows:112px minmax(90px,.48fr) minmax(240px,1.52fr) auto;}
+.oracle-app.brain-expanded{grid-template-rows:112px auto minmax(0,max-content) auto!important;}
+
+.oracle-workspace-link{color:#b9e6fb;border:1px solid #435360;border-radius:1rem;padding:.4rem .7rem;text-decoration:none;font:inherit;display:inline-flex;align-items:center}.oracle-workspace-link:focus-visible{outline:2px solid #83d6ff}

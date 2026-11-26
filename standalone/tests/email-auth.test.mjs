@@ -16,3 +16,62 @@ test('account authorization validates cookies with Supabase and uses a separate 
 test('guest requests make no authentication network call and forged identity headers cannot supply an email identity',async()=>{const req=request('/api/account');req.headers.set('x-archindus-user-id','victim');req.headers.set('authorization','Bearer fake-token');const r=await app.withEmailAuth(req,values,()=>Response.json({user:app.accountIdentity(req)}),async()=>{throw Error('Guest made a network request')});assert.equal((await r.json()).user,null)});
 test('confirmation callback accepts only a code exchange and fixed same-origin destinations',async()=>{for(const query of ['?next=https://evil.test','?code=invalid&next=https://evil.test']){const req=request('/auth/confirm'+query);const r=await app.withEmailAuth(req,values,c=>app.confirmEmail(req,c),async()=>Response.json({error:'invalid_grant',error_description:'Invalid code'},{status:400}));assert.equal(r.status,303);assert.equal(new URL(r.headers.get('Location')).origin,'https://site.test');assert.doesNotMatch(r.headers.get('Location'),/evil|invalid/)}});
 test('signout clears session cookies; a malformed endpoint cannot redirect credentials',async()=>{const req=request('/api/auth/signout',{},storedCookie);const r=await app.withEmailAuth(req,values,c=>app.handleEmailAuth(req,values,c),mock);assert.equal(r.status,200);assert.ok(r.headers.getSetCookie().some(c=>c.startsWith('archindus-auth=;')));assert.equal(app.emailAuthConfig({...values,SUPABASE_URL:'https://evil.test'}),null)});
+test('signup uses Worker-compatible redirect handling and never follows a redirect',async()=>{
+ const req=request('/api/auth/signup',{email:user.email,password:'secure-long-password'});
+ const options=[];
+ const result=await app.withEmailAuth(req,values,c=>app.handleEmailAuth(req,values,c),async(input,init)=>{
+  options.push(init.redirect);
+  assert.equal(new URL(input).pathname,'/auth/v1/signup');
+  if(init.redirect!=='manual')throw new TypeError('Unsupported redirect mode');
+  return new Response(null,{status:307,headers:{Location:'https://evil.test'}});
+ });
+ assert.deepEqual(options,['manual']);
+ assert.equal(result.status,503);
+ assert.equal((await result.json()).code,'account_service_unavailable');
+});
+test('signup returns the confirmation step after Supabase accepts the request',async()=>{
+ const req=request('/api/auth/signup',{email:user.email,password:'secure-long-password'});
+ const result=await app.withEmailAuth(req,values,c=>app.handleEmailAuth(req,values,c),async(input,init)=>{
+  const url=new URL(input);
+  assert.equal(url.pathname,'/auth/v1/signup');
+  assert.equal(url.searchParams.get('redirect_to'),'https://site.test/auth/confirm');
+  assert.equal(init.redirect,'manual');
+  return Response.json({...user,email_confirmed_at:undefined});
+ });
+ assert.equal(result.status,200);
+ assert.equal((await result.json()).confirmationRequired,true);
+ assert.ok(result.headers.getSetCookie().some(cookie=>cookie.startsWith('archindus-auth-code-verifier=')));
+});
+
+ test('account service outages, sender restrictions and rate limits are distinguished without exposing provider details',async()=>{
+  for(const [status,code,expected,publicCode] of [[503,'unexpected_failure',503,'account_service_unavailable'],[401,'invalid_api_key',503,'account_service_unavailable'],[400,'email_address_not_authorized',503,'email_delivery_unavailable'],[429,'over_email_send_rate_limit',429,'account_rate_limited'],[422,'weak_password',400,'weak_password'],[400,'email_address_invalid',400,'invalid_email']]){
+   const req=request('/api/auth/signup',{email:user.email,password:'secure-long-password'});
+   const r=await app.withEmailAuth(req,values,c=>app.handleEmailAuth(req,values,c),async()=>Response.json({code,msg:'private upstream details '+user.email},{status,headers:{'x-supabase-api-version':'2024-01-01'}}));
+   assert.equal(r.status,expected);const text=await r.text();assert.equal(JSON.parse(text).code,publicCode);assert.doesNotMatch(text,/private upstream|alice@|invalid_api_key/);
+  }
+ });
+ test('sign-in reports service failures without claiming invalid credentials',async()=>{
+  for(const action of ['signin']){const req=request('/api/auth/'+action,{email:user.email,...(action==='signin'?{password:'secure-long-password'}:{})});const r=await app.withEmailAuth(req,values,c=>app.handleEmailAuth(req,values,c),async()=>Response.json({code:'unexpected_failure',msg:'private'},{status:503}));assert.equal(r.status,503);assert.equal((await r.json()).code,'account_service_unavailable')}
+ });
+test('confirmation links stage a short-lived token without consuming it on GET and verify on same-origin POST',async()=>{
+ const token='a'.repeat(64);let calls=0;
+ const req=request('/auth/confirm?token_hash='+token+'&type=email&next=https://evil.test');
+ const staged=await app.withEmailAuth(req,values,c=>app.confirmEmail(req,c),async()=>{calls++;throw Error('GET consumed email token')});
+ assert.equal(calls,0);assert.equal(staged.status,303);assert.equal(staged.headers.get('Location'),'https://site.test/auth?confirm=pending');
+ assert.equal(staged.headers.get('Referrer-Policy'),'no-referrer');const cookie=staged.headers.getSetCookie().find(c=>c.startsWith('archindus-email-confirmation='));assert.ok(cookie);assert.match(cookie,/HttpOnly/);assert.match(cookie,/Secure/);assert.match(cookie,/Max-Age=600/);
+ const post=request('/api/auth/confirm',{},cookie.split(';')[0]);
+ const completed=await app.withEmailAuth(post,values,c=>app.handleEmailAuth(post,values,c),async(input,init)=>{calls++;assert.equal(new URL(input).pathname,'/auth/v1/verify');const body=JSON.parse(init.body);assert.equal(body.token_hash,token);assert.equal(body.type,'email');return Response.json(session)});
+ assert.equal(completed.status,200);assert.equal((await completed.json()).signedIn,true);assert.equal(calls,1);assert.ok(completed.headers.getSetCookie().some(c=>c.startsWith('archindus-auth=')));assert.ok(completed.headers.getSetCookie().some(c=>c.startsWith('archindus-email-confirmation=;')));
+});
+test('recovery token uses the reset screen and invalid or cross-origin confirmations never reach Supabase',async()=>{
+ let calls=0;for(const query of ['?token_hash=short&type=email','?token_hash='+'b'.repeat(64)+'&type=invite','?error=access_denied&error_code=otp_expired']){const req=request('/auth/confirm'+query);const r=await app.withEmailAuth(req,values,c=>app.confirmEmail(req,c),async()=>{calls++;throw Error('Unexpected exchange')});assert.equal(r.status,303);assert.doesNotMatch(r.headers.get('Location'),/token_hash|evil/);if(query.includes('otp_expired'))assert.match(r.headers.get('Location'),/error=expired/)}
+ const cross=request('/api/auth/confirm',{},'archindus-email-confirmation=email%3A'+'a'.repeat(64),'https://evil.test');const denied=await app.withEmailAuth(cross,values,c=>app.handleEmailAuth(cross,values,c),async()=>{calls++;throw Error('Cross-origin exchange')});assert.equal(denied.status,403);assert.equal(calls,0);
+ const req=request('/api/auth/confirm',{},'archindus-email-confirmation=recovery%3A'+'a'.repeat(64));const r=await app.withEmailAuth(req,values,c=>app.handleEmailAuth(req,values,c),async()=>Response.json(session));assert.equal((await r.json()).resetRequired,true);
+});
+test('legacy PKCE confirmation keeps the verifier and maps missing context accurately',async()=>{
+ let calls=0;const missing=request('/auth/confirm?code=test');const failed=await app.withEmailAuth(missing,values,c=>app.confirmEmail(missing,c),async()=>{calls++;throw Error('Missing verifier')});assert.match(failed.headers.get('Location'),/error=browser/);assert.equal(calls,0);
+ const signup=request('/api/auth/signup',{email:user.email,password:'secure-long-password'});const created=await app.withEmailAuth(signup,values,c=>app.handleEmailAuth(signup,values,c),async()=>Response.json({...user,email_confirmed_at:undefined}));const verifier=created.headers.getSetCookie().find(c=>c.startsWith('archindus-auth-code-verifier=')).split(';')[0];const req=request('/auth/confirm?code=test&next=https://evil.test',undefined,verifier);const r=await app.withEmailAuth(req,values,c=>app.confirmEmail(req,c),async(input,init)=>{calls++;assert.equal(new URL(input).pathname,'/auth/v1/token');assert.ok(JSON.parse(init.body).code_verifier.length>20);return Response.json(session)});assert.equal(r.headers.get('Location'),'https://site.test/');assert.equal(calls,1);
+});
+test('resending confirmation uses the fixed callback and does not disclose account existence',async()=>{
+ const req=request('/api/auth/resend',{email:user.email});const r=await app.withEmailAuth(req,values,c=>app.handleEmailAuth(req,values,c),async(input,init)=>{assert.equal(new URL(input).pathname,'/auth/v1/resend');assert.equal(new URL(input).searchParams.get('redirect_to'),'https://site.test/auth/confirm');assert.equal(JSON.parse(init.body).type,'signup');return Response.json({})});assert.equal(r.status,200);assert.match((await r.json()).message,/If this address/);
+});

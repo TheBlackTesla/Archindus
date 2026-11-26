@@ -3,11 +3,13 @@ on:
   pull_request:
     paths:
       - 'standalone/**'
+      - 'releases/archindus-site.json'
       - '.github/workflows/standalone-ci.yml'
   push:
     branches: [main]
     paths:
       - 'standalone/**'
+      - 'releases/archindus-site.json'
       - '.github/workflows/standalone-ci.yml'
 permissions:
   contents: read
@@ -20,6 +22,8 @@ jobs:
         working-directory: standalone
     steps:
       - uses: actions/checkout@v4
+      - name: Verify standalone source matches the published Sites release
+        run: test "$(git rev-parse HEAD:standalone)" = "$(jq -r .standalone_tree ../releases/archindus-site.json)"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

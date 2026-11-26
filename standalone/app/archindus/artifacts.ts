@@ -1,7 +1,7 @@
 import { finalAnswer } from "./answer";
 
 export type CodeArtifact = { name: string; language: string; content: string };
-export type Attachment = { id: string; name: string; text: string; truncated: boolean };
+export type Attachment = { id: string; name: string; text: string; truncated: boolean; pages?: string[] };
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_DOCUMENT_CHARS = 100_000;
 const extensions: Record<string, string> = { html: "html", javascript: "js", js: "js", typescript: "ts", ts: "ts", python: "py", py: "py", css: "css", json: "json", csv: "csv", sql: "sql", bash: "sh", sh: "sh", markdown: "md", md: "md", jsx: "jsx", tsx: "tsx", c: "c", cpp: "cpp", java: "java", rust: "rs", go: "go", yaml: "yaml", yml: "yml", svg: "svg" };
@@ -19,6 +19,11 @@ export function codeArtifacts(answer: string): CodeArtifact[] {
     const ext = extensions[language] ?? (/^\s*(?:<!doctype html>|<html)/i.test(content) ? "html" : "txt");
     return { name: given ?? `archindus-${index + 1}.${ext}`, language: ext === "html" ? "html" : language, content };
   });
+}
+export function downloadableCodeArtifacts(answer: string) {
+  return codeArtifacts(answer).filter(file => file.language === 'html'
+    || file.content.length >= 1500
+    || file.content.split('\n').length >= 30);
 }
 export function previewDocument(html: string) {
   // The first policy wins even if generated HTML contains a second CSP or base.

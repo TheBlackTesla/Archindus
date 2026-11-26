@@ -1,0 +1,356 @@
+{
+  "runId": "c8a5bdb6-4f3b-4c7f-af21-bd1a1f27b631",
+  "suiteVersion": "synthetic-quality-v1",
+  "graderVersion": "deterministic-v1",
+  "champion": "operational-v1",
+  "challenger": "confidence-v2",
+  "snapshot": {
+    "analysis": {
+      "champion": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b"
+      },
+      "challenger": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b"
+      },
+      "evidence": [
+        {
+          "id": "openrouter:google/gemma-4-26b-a4b-it:free",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        },
+        {
+          "id": "groq:openai/gpt-oss-20b",
+          "free": true,
+          "base": 0.10856092413764201,
+          "evidence": null
+        },
+        {
+          "id": "openrouter:google/gemma-4-31b-it:free",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        },
+        {
+          "id": "groq:qwen/qwen3.8-27b",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        },
+        {
+          "id": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        },
+        {
+          "id": "groq:openai/gpt-oss-120b",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        }
+      ]
+    },
+    "chat": {
+      "champion": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b"
+      },
+      "challenger": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b"
+      },
+      "evidence": [
+        {
+          "id": "openrouter:openrouter/free",
+          "free": true,
+          "base": 0,
+          "evidence": {
+            "n": 2,
+            "s": 1,
+            "ms": 1137,
+            "charged": 0,
+            "unknownUsage": 1
+          }
+        },
+        {
+          "id": "openrouter:google/gemma-4-26b-a4b-it:free",
+          "free": true,
+          "base": 0,
+          "evidence": {
+            "n": 1,
+            "s": 0,
+            "ms": 138,
+            "charged": 0,
+            "unknownUsage": 1
+          }
+        },
+        {
+          "id": "groq:openai/gpt-oss-20b",
+          "free": true,
+          "base": 0.09378197850958918,
+          "evidence": {
+            "n": 7,
+            "s": 6,
+            "ms": 3537,
+            "charged": 0,
+            "unknownUsage": 1
+          }
+        },
+        {
+          "id": "openrouter:google/gemma-4-31b-it:free",
+          "free": true,
+          "base": 0,
+          "evidence": {
+            "n": 1,
+            "s": 0,
+            "ms": 122,
+            "charged": 0,
+            "unknownUsage": 1
+          }
+        },
+        {
+          "id": "groq:qwen/qwen3.8-27b",
+          "free": true,
+          "base": 0,
+          "evidence": {
+            "n": 1,
+            "s": 1,
+            "ms": 416,
+            "charged": 0,
+            "unknownUsage": 0
+          }
+        },
+        {
+          "id": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+          "free": true,
+          "base": 0,
+          "evidence": {
+            "n": 1,
+            "s": 0,
+            "ms": 239,
+            "charged": 0,
+            "unknownUsage": 0
+          }
+        },
+        {
+          "id": "groq:openai/gpt-oss-120b",
+          "free": true,
+          "base": 0,
+          "evidence": {
+            "n": 1,
+            "s": 1,
+            "ms": 1450,
+            "charged": 0,
+            "unknownUsage": 0
+          }
+        }
+      ]
+    },
+    "code": {
+      "champion": {
+        "provider": "openrouter",
+        "model": "cohere/north-mini-code:free"
+      },
+      "challenger": {
+        "provider": "openrouter",
+        "model": "cohere/north-mini-code:free"
+      },
+      "evidence": [
+        {
+          "id": "openrouter:cohere/north-mini-code:free",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        },
+        {
+          "id": "groq:qwen/qwen3.8-27b",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        },
+        {
+          "id": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        },
+        {
+          "id": "groq:openai/gpt-oss-120b",
+          "free": true,
+          "base": 0,
+          "evidence": null
+        }
+      ]
+    }
+  },
+  "observations": [
+    {
+      "caseId": "add-function",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "function_cases_passed",
+      "model": "Cohere North Mini Code Free (cohere/north-mini-code:free) · OpenRouter",
+      "elapsedMs": 3645,
+      "chargedMicrodollars": 0,
+      "outputHash": "9d6abba4a20eab6b3a36d7b8d633b128fb3eb135ca2f1ba262bb9b83467cde5a"
+    },
+    {
+      "caseId": "books",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 393,
+      "chargedMicrodollars": 0,
+      "outputHash": "346266f60afa86f3c2b4ba033da94627372d95603adfb6e7ecaeafba0c6aea24"
+    },
+    {
+      "caseId": "even-values",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 431,
+      "chargedMicrodollars": 0,
+      "outputHash": "669a51ca15aa4883b5150edc23f2e1fe1d71b0ee7f3b334bfc95b70df216f2af"
+    },
+    {
+      "caseId": "extract-person",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 291,
+      "chargedMicrodollars": 0,
+      "outputHash": "dd48b45588694f135b6d0c14ccc9680e0d9e0ed0754234030139664cba464f36"
+    },
+    {
+      "caseId": "extract-stock",
+      "arm": "shared",
+      "status": "complete",
+      "passed": false,
+      "reason": "wrong_value_or_shape",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 586,
+      "chargedMicrodollars": 0,
+      "outputHash": "e80487c0dc499fe4ef9b024d191803facbeeb22dcbd6d65f3db14969e0d32095"
+    },
+    {
+      "caseId": "instruction-case",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 569,
+      "chargedMicrodollars": 0,
+      "outputHash": "4a4a5d104fa8563e0cef11c3c2f5d2a15dbad17daad4b8ddaa60a21411994c11"
+    },
+    {
+      "caseId": "inventory",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 446,
+      "chargedMicrodollars": 0,
+      "outputHash": "eb79507fe01d045f6bf133a6cc58c1980562d282d2ecd94e6438dddf1289e422"
+    },
+    {
+      "caseId": "linear-function",
+      "arm": "shared",
+      "status": "unavailable",
+      "passed": false,
+      "reason": "incomplete_or_refused",
+      "model": "Cohere North Mini Code Free (cohere/north-mini-code:free) · OpenRouter",
+      "elapsedMs": 19683,
+      "chargedMicrodollars": 0
+    },
+    {
+      "caseId": "pens",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 476,
+      "chargedMicrodollars": 0,
+      "outputHash": "6cbb31b3e6182fa9a43c0f485e5d6c2c6bf47e4752009c24c531f0ec1fcdad7b"
+    },
+    {
+      "caseId": "reverse-tokens",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 310,
+      "chargedMicrodollars": 0,
+      "outputHash": "5effcaefc69c65d93cfeae6596598da685ef67cdd8c04ebd3a93fc63cd2b4fe0"
+    },
+    {
+      "caseId": "sort-names",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "exact_match",
+      "model": "GPT-OSS 20B (openai/gpt-oss-20b) · Groq",
+      "elapsedMs": 270,
+      "chargedMicrodollars": 0,
+      "outputHash": "51011467c92e4768976e1bccb8b3b134028094bfcadd1f0b1e81cfc09c275518"
+    },
+    {
+      "caseId": "square-function",
+      "arm": "shared",
+      "status": "complete",
+      "passed": true,
+      "reason": "function_cases_passed",
+      "model": "Cohere North Mini Code Free (cohere/north-mini-code:free) · OpenRouter",
+      "elapsedMs": 1813,
+      "chargedMicrodollars": 0,
+      "outputHash": "60a0c18ffada03f146a11d6f6df67d1299ad2f2d75c4643a25a4cbf4bb68f81b"
+    }
+  ],
+  "summary": {
+    "suiteVersion": "synthetic-quality-v1",
+    "graderVersion": "deterministic-v1",
+    "distinctCases": 12,
+    "completedPairs": 12,
+    "championAvailability": 0.9166666666666666,
+    "challengerAvailability": 0.9166666666666666,
+    "matchedCases": 11,
+    "holdoutSamples": 4,
+    "championPassRate": 0.9090909090909091,
+    "challengerPassRate": 0.9090909090909091,
+    "holdoutDifference": 0,
+    "qualityLowerBound": -1.2238734153404083,
+    "costRatio": 1,
+    "latencyRatio": 1,
+    "unavailable": 1,
+    "sharedCases": 12,
+    "evidence": "Fixed synthetic benchmark only; not a representative production causal estimate"
+  },
+  "recordedAt": "2026-11-16T20:24:41.960Z",
+  "outputs": {
+    "linear-function:shared": "",
+    "inventory:shared": "{\"answer\":66}",
+    "instruction-case:shared": "{\"tokens\":[\"BETA?\",\"ALPHA!\"]}",
+    "sort-names:shared": "{\"names\":[\"Ada\",\"Lin\",\"Zoe\"]}",
+    "books:shared": "{\"answer\":23}",
+    "reverse-tokens:shared": "{\"tokens\": [\"green\", \"blue\", \"red\"]}",
+    "add-function:shared": "{\n  \"code\": \"function add(a,b){return a+b;}\"\n}",
+    "extract-stock:shared": "{\"warehouse\":\"Warehouse B\",\"color\":\"blue\",\"boxes\":17}",
+    "square-function:shared": "{\"code\":\"function square(n) { return n * n; }\"}",
+    "pens:shared": "{\"answer\":47}",
+    "extract-person:shared": "{\"name\":\"Ada Lovelace\",\"notebooks\":3}",
+    "even-values:shared": "{\"even\":[2,4,8]}"
+  }
+}

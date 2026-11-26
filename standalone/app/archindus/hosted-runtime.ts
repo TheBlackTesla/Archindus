@@ -1,3 +1,4 @@
+import {readReceipt,type RoutingReceipt} from './routing-receipt';
 import type { ContextMessage } from "./answer";
 import { transportHistory } from "./answer";
 import type { AgentId } from "./agents";
@@ -9,7 +10,11 @@ import { readEvents } from "./stream";
 export class HostedRefusal extends Error { name = "HostedRefusal"; }
 export class HostedRuntime {
   temporary = false;
+  referenceOnly = false;
   personalityId?:string;
+  onSearchSuggestions?:(html:string)=>void;
+  onReceipt?:(receipt:RoutingReceipt)=>void;
+  onRoute?:(reason:string)=>void;
   onModel?:(model:string)=>void;
   private unavailableUntil = 0;
   constructor(private transport: typeof fetch = fetch.bind(globalThis), private now: () => number = Date.now) {}
@@ -25,10 +30,13 @@ export class HostedRuntime {
       const response = await this.transport("/api/archindus/hosted", {
         method: "POST", headers: { "Content-Type": "application/json" },
         signal: requestSignal,
-        body: JSON.stringify({ requestId: requestId(), action, stream: action === "generate", temporary:this.temporary,...(this.personalityId?{personalityId:this.personalityId}:{}), selectedAgentId: selected, objective, history: transportHistory(history), ...(plan ? { plan: { primaryId: plan.primaryId, task: plan.task } } : {}) }),
+        body: JSON.stringify({ requestId: requestId(), action, stream: action === "generate", temporary:this.temporary,referenceOnly:this.referenceOnly,...(this.personalityId?{personalityId:this.personalityId}:{}), selectedAgentId: selected, objective, history: transportHistory(history), ...(plan ? { plan: { primaryId: plan.primaryId, task: plan.task } } : {}) }),
       });
+      const routeReason=response.headers.get('X-Archindus-Route-Reason');
+      if(routeReason&&response.ok)this.onRoute?.(routeReason);
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+        const receipt=readReceipt(data.receipt);if(receipt)this.onReceipt?.(receipt);
         if (data.code === "content_refused") throw new HostedRefusal(data.error);
         if(response.status===404&&this.personalityId){const e=new Error(data.error);e.name='PersonalityUnavailable';throw e;}
         const seconds = Number(response.headers.get("Retry-After"));
@@ -42,6 +50,7 @@ export class HostedRuntime {
       }
       if (response.headers.get("Content-Type")?.includes("text/event-stream") && response.body) {
         for await (const event of readEvents(response.body, requestSignal)) {
+          const receipt=readReceipt(event.receipt);if(receipt)this.onReceipt?.(receipt);
           if(typeof event.model==='string')this.onModel?.(event.model);
           if (event.type === "error") {
             if (event.code === "content_refused") throw new HostedRefusal(event.error);
@@ -52,7 +61,8 @@ export class HostedRuntime {
         }
         throw new Error("The answer was interrupted. Please retry.");
       }
-      return await response.json() as { plan?: TaskPlan; text?: string; model?: string };
+      const data=await response.json();if(typeof data.searchSuggestions==='string')this.onSearchSuggestions?.(data.searchSuggestions.slice(0,40000));const receipt=readReceipt(data.receipt);if(receipt)this.onReceipt?.(receipt);
+      return data as { plan?: TaskPlan; text?: string; model?: string };
     } catch (error) {
       signal.throwIfAborted();
       if (!(error instanceof HostedRefusal)&&!(error instanceof Error&&error.name==='PersonalityUnavailable')) this.unavailableUntil = this.now() + retryAfter * 1000;

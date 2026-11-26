@@ -10,3 +10,21 @@ export async function generateWorkerMedia(kind:'image'|'video',prompt:string,opt
   }throw Error('The media worker is taking longer than expected. The job may still finish on the worker.');
  }catch(e){if(id&&options.signal.aborted)void transport('/api/archindus/media/'+id,{method:'DELETE',headers,body:'{}',signal:AbortSignal.timeout(6000)}).catch(()=>{});throw e}
 }
+
+export async function generateCloudMedia(kind:'image'|'video',prompt:string,signal:AbortSignal){
+ const response=await fetch('/api/archindus/cloud-media',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,prompt}),signal});
+ if(!response.ok){const data=await response.json();throw Error(data.error??'Media generation unavailable.')}
+ let blob=await response.blob();
+ if(kind==='image'&&blob.type==='image/jpeg'){
+  const bitmap=await createImageBitmap(blob);
+  try{
+   if(bitmap.width>1536||bitmap.height>1536)throw Error('Image dimensions exceed the limit.');
+   const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
+   const context=canvas.getContext('2d');if(!context)throw Error('Image conversion unavailable.');
+   context.drawImage(bitmap,0,0);
+   blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error('Image conversion failed.')),'image/png'));
+  }finally{bitmap.close();}
+ }
+ if(blob.size>20000000||blob.type!==(kind==='image'?'image/png':'video/mp4'))throw Error('The media output was invalid.');
+ return {blob,model:response.headers.get('X-Archindus-Model')??'Model not reported'};
+}

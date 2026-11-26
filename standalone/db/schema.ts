@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { primaryKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // One shared cooldown survives Worker restarts and applies to every visitor.
 export const inferenceProviderState = sqliteTable("inference_provider_state", {
@@ -58,3 +58,33 @@ export const mediaJobs=sqliteTable('media_jobs',{
 export const accountIntegrations=sqliteTable('account_integrations',{
  userId:text('user_id').notNull(),provider:text('provider').notNull(),dataVersion:text('data_version').notNull(),label:text('label').notNull(),endpointHint:text('endpoint_hint').notNull().default(''),encryptedValue:text('encrypted_value').notNull(),updatedAt:integer('updated_at').notNull(),
 },table=>[uniqueIndex('idx_integrations_user_provider').on(table.userId,table.provider)]);
+export const accountRoutingFeedback=sqliteTable('account_routing_feedback',{
+ userId:text('user_id').notNull(),item:text('item').notNull(),model:text('model').notNull(),task:text('task').notNull(),rating:integer('rating').notNull(),
+},table=>[primaryKey({columns:[table.userId,table.item]})]);
+
+// Aggregate operational evidence only. No user IDs, prompts or response text.
+export const routingModelMetrics=sqliteTable('routing_model_metrics',{
+ provider:text('provider').notNull(),model:text('model').notNull(),task:text('task').notNull(),day:text('day').notNull(),attempts:integer('attempts').notNull(),successes:integer('successes').notNull(),elapsedMs:integer('elapsed_ms').notNull(),charged:integer('charged').notNull(),unknownUsage:integer('unknown_usage').notNull(),
+},table=>[primaryKey({columns:[table.provider,table.model,table.task,table.day]})]);
+
+// Anonymous ranking comparisons only; never counterfactual quality claims.
+export const routingPolicyShadow=sqliteTable('routing_policy_shadow',{
+ day:text('day').notNull(),task:text('task').notNull(),champion:text('champion').notNull(),challenger:text('challenger').notNull(),decisions:integer('decisions').notNull(),disagreements:integer('disagreements').notNull(),
+},table=>[primaryKey({columns:[table.day,table.task,table.champion,table.challenger]})]);
+
+export const routingQualityTrials=sqliteTable('routing_quality_trials',{
+ id:text('id').primaryKey(),day:text('day').notNull(),suite:text('suite').notNull(),snapshot:text('snapshot').notNull(),createdAt:integer('created_at').notNull(),
+},table=>[uniqueIndex('idx_quality_trial_day').on(table.day)]);
+export const routingQualityResults=sqliteTable('routing_quality_results',{
+ id:text('id').primaryKey(),runId:text('run_id').notNull(),caseId:text('case_id').notNull(),arm:text('arm').notNull(),status:text('status').notNull(),result:text('result').notNull(),createdAt:integer('created_at').notNull(),
+},table=>[index('idx_quality_result_run').on(table.runId)]);
+
+export const sourceProjects=sqliteTable('source_projects',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),title:text('title').notNull(),
+ revision:text('revision').notNull(),objectKey:text('object_key').notNull(),updatedAt:integer('updated_at').notNull(),
+},table=>[index('idx_source_projects_owner').on(table.userId,table.updatedAt)]);
+
+export const modelChecks=sqliteTable('model_checks',{
+ target:text('target').notNull(),day:text('day').notNull(),checkedAt:integer('checked_at').notNull(),
+ outcome:text('outcome').notNull(),actualModel:text('actual_model'),
+},table=>[primaryKey({columns:[table.target,table.day]})]);
