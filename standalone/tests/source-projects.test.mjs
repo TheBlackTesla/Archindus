@@ -60,3 +60,44 @@ test('changing memory and history preserves independently saved instructions', a
  assert.equal(enabled.memoryEnabled,true);
  assert.equal(enabled.historyEnabled,false);
 });
+
+test('a conflicting clause outside the top search passages blocks a ranking and is cited', () => {
+  const a = source('A','17 calendar days of written authorization');
+  a.pages.push(
+    ...Array(5).fill('Delivery commitments and deadlines. Ask which delivery deadline is sooner.'),
+    'Final appendix. We will deliver the pilot within 31 calendar days of written authorization.'
+  );
+  const b = source('B','23 calendar days of written authorization');
+  const brief = api.buildBrief('Which delivery commitment is sooner?',[a,b]);
+  assert.equal(brief.decisionBlocked,true);
+  assert.match(brief.summary,/conflict/);
+  const lateTerm = brief.findings.find(f => f.text.includes('31 calendar days'));
+  assert.equal(brief.sources[lateTerm.source].page,a.pages.length);
+  assert.ok(brief.findings.some(f => f.text.includes('17 calendar days')));
+});
+
+test('scanned, missing, and unreadable PDF pages prevent a definitive ranking', () => {
+  const a = source('A','17 calendar days of written authorization');
+  const b = source('B','23 calendar days of written authorization');
+  for (const [pages,note] of [
+    [[...a.pages,'  '],/no readable text on PDF pages 3.*OCR/],
+    [[a.pages[0],a.pages[1]+'\nPage 2 of 3'],/missing or out-of-order/],
+    [['',''],/no readable text on PDF pages 1, 2/],
+  ]) {
+    const brief = api.buildBrief('Which delivery commitment is sooner?',[{...a,pages},b]);
+    assert.equal(brief.decisionBlocked,true);
+    assert.match(brief.summary,/incomplete/);
+    assert.match(brief.review.join(' '),note);
+  }
+});
+
+test('delivery evidence treats same-name sources separately and flags conditional commitments', () => {
+  const a = source('proposal','17 calendar days of written authorization');
+  const b = source('proposal','23 calendar days of written authorization');
+  const question = 'Which delivery commitment is sooner?';
+  assert.match(api.buildBrief(question,[a,b]).summary,/\(source 1\).*6 days sooner/);
+  b.pages[1] = 'We will deliver the full production system within 23 calendar days of written authorization.';
+  assert.match(api.buildBrief(question,[a,b]).review.join(' '),/different units, starting conditions, or deliverables/);
+  b.pages[1] = 'We estimate we will deliver the pilot within 23 calendar days of written authorization.';
+  assert.equal(api.buildBrief(question,[a,b]).decisionBlocked,true);
+});

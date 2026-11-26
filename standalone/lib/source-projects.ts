@@ -9,7 +9,7 @@ export type ProjectBucket={
 const json=(v:unknown,status=200)=>Response.json(v,{status,headers:{'Cache-Control':'no-store','Vary':'Cookie'}});
 const idSchema=z.string().uuid();
 const source=z.object({fileId:idSchema,fileName:z.string().max(120),location:z.string().max(80),text:z.string().max(1600),page:z.number().int().positive().max(500).optional()});
-const brief=z.object({question:z.string().max(2000),sources:z.array(source).max(18),findings:z.array(z.object({text:z.string().max(1600),source:z.number().int().min(0).max(17)})).max(36),review:z.array(z.string().max(1000)).max(12),summary:z.string().max(8000),modelReview:z.object({text:z.string().max(6500),model:z.string().max(250)}).optional()});
+const brief=z.object({question:z.string().max(2000),sources:z.array(source).max(18),findings:z.array(z.object({text:z.string().max(1600),source:z.number().int().min(0).max(17)})).max(36),review:z.array(z.string().max(1000)).max(12),summary:z.string().max(8000),decisionBlocked:z.boolean().optional(),modelReview:z.object({text:z.string().max(6500),model:z.string().max(250)}).optional()});
 const file=z.object({id:idSchema,name:z.string().min(1).max(120).regex(/\.(pdf|docx|csv|md|txt|json)$/i),data:z.string().min(4).max(7_000_000).regex(/^[A-Za-z0-9+/]*={0,2}$/)});
 const bundle=z.object({title:z.string().trim().min(1).max(120),revision:idSchema.nullable(),files:z.array(file).min(1).max(3),briefs:z.array(brief).max(12)}).strict().refine(value=>{
  const ids=new Set(value.files.map(f=>f.id));

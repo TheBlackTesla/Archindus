@@ -31,16 +31,23 @@ export async function readAttachment(file: File, whole = false): Promise<Attachm
       const pdf = await task.promise;
       truncated = pdf.numPages > pageLimit;
       for (let i = 1; i <= Math.min(pdf.numPages, pageLimit); i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        const pageText = content.items.map(item => "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "").join("") + "\n";
-        pages.push(pageText); text += pageText;
-        page.cleanup();
+        try {
+          const page = await pdf.getPage(i);
+          try {
+            const content = await page.getTextContent();
+            const pageText = content.items.map(item => "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "").join("") + "\n";
+            pages.push(pageText);
+            text += pageText;
+          } finally { page.cleanup(); }
+        } catch (error) {
+          if (!whole) throw error;
+          pages.push("");
+        }
         if (text.length > charLimit) { truncated = true; break; }
       }
     } finally { await task.destroy(); }
   } else throw new Error("Supported files: PDF, DOCX, TXT, Markdown, CSV, and JSON.");
-  if (!text.trim()) throw new Error("No readable text was found. Scanned PDFs need OCR before upload.");
+  if (!text.trim() && !(whole && pages.length)) throw new Error("No readable text was found. Scanned PDFs need OCR before upload.");
   if(whole&&(truncated||text.length>charLimit))throw new Error("Split this file into parts of at most 500 pages and 600,000 text characters each.");
   return { id: requestId(), name: file.name.slice(0, 120), text: text.slice(0, charLimit), truncated: truncated || text.length > charLimit, ...(pages.length?{pages}: {}) };
 }
