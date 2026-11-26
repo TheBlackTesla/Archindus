@@ -30,6 +30,8 @@ jobs:
           cache: npm
           cache-dependency-path: standalone/package-lock.json
       - name: Install exact dependencies
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
         run: npm ci --no-audit --no-fund
       - name: TypeScript validation
         run: npx tsc --noEmit -p tsconfig.json
