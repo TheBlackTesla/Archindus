@@ -75,7 +75,8 @@ function deliveryTerms(index: Passage[]): DeliveryTerm[] {
         terms.push({
           passage, quote, days: Number(match[2]),
           unit: match[3].toLowerCase(),
-          scope: match[1].toLowerCase().trim().replace(/^(?:the|a|an)\s+/,'').replace(/\b(?:within|in|by|no later than)\s*$/,'').trim(),
+          scope: match[1].toLowerCase().replace(/^.*\b(?:deliver(?:s|ed|y)?|complet(?:e|es|ed|ion))\b/,'').trim()
+            .replace(/^(?:the|a|an)\s+/,'').replace(/\b(?:within|in|by|no later than)\s*$/,'').trim(),
           anchor: match[4].trim().toLowerCase().replace(/\s+/g, ' '),
         });
       }

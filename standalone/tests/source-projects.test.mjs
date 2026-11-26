@@ -95,6 +95,8 @@ test('delivery evidence treats same-name sources separately and flags conditiona
   const a = source('proposal','17 calendar days of written authorization');
   const b = source('proposal','23 calendar days of written authorization');
   const question = 'Which delivery commitment is sooner?';
+  a.pages[1] = 'Delivery commitment Proposal A / Standard implementation ' + a.pages[1];
+  b.pages[1] = 'Delivery commitment Proposal B / Extended handover ' + b.pages[1];
   assert.match(api.buildBrief(question,[a,b]).summary,/\(source 1\).*6 days sooner/);
   b.pages[1] = 'We will deliver the full production system within 23 calendar days of written authorization.';
   assert.match(api.buildBrief(question,[a,b]).review.join(' '),/different units, starting conditions, or deliverables/);
