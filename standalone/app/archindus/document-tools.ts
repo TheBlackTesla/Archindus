@@ -1,12 +1,19 @@
+import { MAX_PROJECT_TEXT } from "../../lib/document-pages";
 import { requestId } from "./request-id";
 import { MAX_DOCUMENT_CHARS, MAX_FILE_BYTES, type Attachment } from "./artifacts";
+
+export async function openPdf(file: File) {
+  const [pdfjs, worker] = await Promise.all([import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs?url")]);
+  pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+  return pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), useSystemFonts: true });
+}
 
 export async function readAttachment(file: File, whole = false): Promise<Attachment> {
   if (!file.size || file.size > MAX_FILE_BYTES) throw new Error("Choose a nonempty file up to 5 MB.");
   const extension = file.name.split(".").at(-1)?.toLowerCase();
   let text = ""; let truncated = false;
   const pages:string[]=[];
-  const charLimit=whole?600_000:MAX_DOCUMENT_CHARS, pageLimit=whole?500:40;
+  const charLimit=whole?MAX_PROJECT_TEXT:MAX_DOCUMENT_CHARS, pageLimit=whole?500:40;
   if (["txt", "md", "csv", "json"].includes(extension ?? "")) {
     text = await file.text();
     if (text.includes("\u0000")) throw new Error("This file contains binary data. Upload a text document instead.");
@@ -23,10 +30,7 @@ export async function readAttachment(file: File, whole = false): Promise<Attachm
     if (xml.querySelector("parsererror")) throw new Error("The Word document contains invalid XML.");
     text = [...xml.getElementsByTagNameNS("*", "p")].map(p => [...p.getElementsByTagNameNS("*", "t")].map(t => t.textContent ?? "").join("")).join("\n");
   } else if (extension === "pdf") {
-    const pdfjs = await import("pdfjs-dist");
-    const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-    pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-    const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), useSystemFonts: true });
+    const task = await openPdf(file);
     try {
       const pdf = await task.promise;
       truncated = pdf.numPages > pageLimit;
@@ -47,7 +51,7 @@ export async function readAttachment(file: File, whole = false): Promise<Attachm
       }
     } finally { await task.destroy(); }
   } else throw new Error("Supported files: PDF, DOCX, TXT, Markdown, CSV, and JSON.");
-  if (!text.trim() && !(whole && pages.length)) throw new Error("No readable text was found. Scanned PDFs need OCR before upload.");
+  if (!text.trim() && !(whole && pages.length)) throw new Error("No readable text was found. Review scanned PDFs in the document workspace.");
   if(whole&&(truncated||text.length>charLimit))throw new Error("Split this file into parts of at most 500 pages and 600,000 text characters each.");
   return { id: requestId(), name: file.name.slice(0, 120), text: text.slice(0, charLimit), truncated: truncated || text.length > charLimit, ...(pages.length?{pages}: {}) };
 }

@@ -103,3 +103,56 @@ test('delivery evidence treats same-name sources separately and flags conditiona
   b.pages[1] = 'We estimate we will deliver the pilot within 23 calendar days of written authorization.';
   assert.equal(api.buildBrief(question,[a,b]).decisionBlocked,true);
 });
+
+test('only checked text unlocks scanned pages and corrections update the page citation', () => {
+  const a = source('A','17 calendar days of written authorization');
+  const b = {...source('scan',''),pages:[' \n','Page 2 of 2']};
+  const question = 'Which delivery commitment is sooner?';
+  const first = {page:1,text:'The project includes a document intake pilot.'};
+  const second = {page:2,text:'We will deliver the pilot within 23 calendar days of written authorization.'};
+  const brief = reviews => api.buildBrief(question,[a,{...b,reviewedPages:reviews}]);
+  assert.equal(brief([]).decisionBlocked,true);
+  assert.equal(brief([first]).decisionBlocked,true);
+  assert.equal(brief([second]).decisionBlocked,true);
+  const checked = brief([first,second]);
+  assert.equal(checked.decisionBlocked,false);
+  assert.match(checked.summary,/6 days sooner/);
+  const finding = checked.findings.find(f=>f.text.includes('23 calendar'));
+  assert.equal(checked.sources[finding.source].location,'Page 2 · reviewed transcription');
+  assert.equal(checked.sources[finding.source].page,2);
+  assert.match(brief([first,{...second,text:second.text.replace('23','25')}]).summary,/8 days sooner/);
+  assert.equal(brief([first,{...second,text:'Page 2 of 2'}]).decisionBlocked,true);
+  const missing = {...b,pages:['','Page 3 of 3'],reviewedPages:[first,second]};
+  assert.match(api.buildBrief(question,[a,missing]).review.join(' '),/missing or out-of-order/);
+  const forged = {...a,reviewedPages:[{page:2,text:second.text.replace('23','105')}]};
+  assert.match(api.buildBrief(question,[forged,{...b,reviewedPages:[first,second]}]).summary,/6 days sooner/);
+});
+
+test('saved projects round-trip checked transcriptions and reject duplicate or invalid page entries', async () => {
+  const user = 'scan-owner';
+  versions[user] = (await (await account(user)).json()).user.version;
+  const id=crypto.randomUUID(), path='/projects/'+id;
+  const original=await readFile('public/examples/proposal-b-scan.pdf');
+  const entry={id:crypto.randomUUID(),name:'scan.pdf',data:original.toString('base64'),reviewedPages:[{page:2,text:'We will deliver the pilot within 23 calendar days of written authorization.'}]};
+  const value={title:'Scanned project',revision:null,files:[entry],briefs:[]};
+  assert.equal((await account(user,path,'PUT',value)).status,200);
+  const saved=await (await account(user,path)).json();
+  assert.deepEqual(saved.files,[entry]);
+  for (const invalid of [
+    {...entry,reviewedPages:[...entry.reviewedPages,...entry.reviewedPages]},
+    {...entry,name:'scan.txt'}, {...entry,reviewedPages:[{page:0,text:'Clause'}]},
+    {...entry,reviewedPages:[{page:2,text:'   '}]},
+  ]) assert.equal((await account(user,path,'PUT',{...saved,files:[invalid]})).status,400);
+  assert.deepEqual((await (await account(user,path)).json()).files,[entry]);
+  await account(user,path,'DELETE',{});
+});
+
+test('a qualified clause survives a duplicate unconditional clause on another page', () => {
+  const a=source('A','17 calendar days of written authorization');
+  a.pages.splice(1,0,'We estimate we will deliver the pilot within 17 calendar days of written authorization.');
+  const brief=api.buildBrief('Which proposal delivers sooner?',[a,source('B','23 calendar days of written authorization')]);
+  assert.equal(brief.decisionBlocked,true);
+  assert.match(brief.review.join(' '),/estimate, condition, or qualification/);
+  const qualification=brief.findings.find(f=>f.text.includes('estimate'));
+  assert.equal(brief.sources[qualification.source].page,2);
+});

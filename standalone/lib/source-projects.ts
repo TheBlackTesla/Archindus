@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {MAX_PROJECT_TEXT, MAX_REVIEW_CHARS, needsTranscription} from './document-pages';
 import {boundedAccountJson,type AccountDb} from './account';
 
 export type ProjectBucket={
@@ -10,7 +11,19 @@ const json=(v:unknown,status=200)=>Response.json(v,{status,headers:{'Cache-Contr
 const idSchema=z.string().uuid();
 const source=z.object({fileId:idSchema,fileName:z.string().max(120),location:z.string().max(80),text:z.string().max(1600),page:z.number().int().positive().max(500).optional()});
 const brief=z.object({question:z.string().max(2000),sources:z.array(source).max(18),findings:z.array(z.object({text:z.string().max(1600),source:z.number().int().min(0).max(17)})).max(36),review:z.array(z.string().max(1000)).max(12),summary:z.string().max(8000),decisionBlocked:z.boolean().optional(),modelReview:z.object({text:z.string().max(6500),model:z.string().max(250)}).optional()});
-const file=z.object({id:idSchema,name:z.string().min(1).max(120).regex(/\.(pdf|docx|csv|md|txt|json)$/i),data:z.string().min(4).max(7_000_000).regex(/^[A-Za-z0-9+/]*={0,2}$/)});
+const reviewedPage = z.object({
+ page: z.number().int().min(1).max(500),
+ text: z.string().trim().min(1).max(MAX_REVIEW_CHARS).refine(text => !needsTranscription(text)),
+});
+const file=z.object({
+ id:idSchema,name:z.string().min(1).max(120).regex(/\.(pdf|docx|csv|md|txt|json)$/i),
+ data:z.string().min(4).max(7_000_000).regex(/^[A-Za-z0-9+/]*={0,2}$/),
+ reviewedPages:z.array(reviewedPage).max(500).optional(),
+}).refine(file => {
+ const pages = file.reviewedPages ?? [];
+ return !pages.length || (/\.pdf$/i.test(file.name) && new Set(pages.map(p => p.page)).size === pages.length
+   && pages.reduce((n, p) => n + p.text.length, 0) <= MAX_PROJECT_TEXT);
+}, 'Reviewed text must refer to distinct pages of a PDF within the project text limit.');
 const bundle=z.object({title:z.string().trim().min(1).max(120),revision:idSchema.nullable(),files:z.array(file).min(1).max(3),briefs:z.array(brief).max(12)}).strict().refine(value=>{
  const ids=new Set(value.files.map(f=>f.id));
  return value.briefs.every(b=>b.sources.every(s=>ids.has(s.fileId))&&b.findings.every(f=>f.source<b.sources.length));
@@ -36,7 +49,7 @@ export async function handleProjects(req:Request,db:AccountDb,bucket:ProjectBuck
    await bucket.delete(row.object_key);return json({deleted:true});
  }
  if(req.method!=='PUT')return json({error:'Method not allowed.'},405);
- const data=bundle.parse(await boundedAccountJson(req,8_800_000));
+ const data=bundle.parse(await boundedAccountJson(req,16_000_000));
  if(data.files.reduce((n,f)=>n+f.data.length,0)>8_000_000)return json({error:'Saved projects support up to 6 MB of original files combined.'},413);
  if(new Set(data.files.map(f=>f.id)).size!==data.files.length)return json({error:'Duplicate source file.'},400);
  if((current?.revision??null)!==data.revision)return json({error:'This project changed in another tab. Reopen it before saving.'},409);

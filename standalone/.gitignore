@@ -50,3 +50,6 @@ runtime/.gateway-token
 runtime/.env.runtime
 runtime/archindus-workflows.json
 runtime/__pycache__/
+
+# Browser OCR assets copied from pinned packages during build
+/public/ocr/

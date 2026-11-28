@@ -41,3 +41,13 @@ jobs:
         run: node --test tests/*.test.mjs
       - name: Workstation gateway policy tests
         run: python3 -m unittest discover -s runtime -p 'test_gateway.py' -v
+      - name: Verify real file selection and scanned-page review in Chrome
+        run: |
+          ./node_modules/.bin/wrangler dev --local --config dist/server/wrangler.json --ip 127.0.0.1 --port 4173 > "$RUNNER_TEMP/archindus-workspace.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          if ! curl -fsS --retry 30 --retry-all-errors --retry-delay 1 --max-time 5 http://127.0.0.1:4173/workspace -o /dev/null; then
+            cat "$RUNNER_TEMP/archindus-workspace.log"
+            exit 1
+          fi
+          node tests/browser/document-workspace.mjs

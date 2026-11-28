@@ -1,3 +1,4 @@
+import { documentPages } from '../../lib/document-pages';
 import type { Attachment } from './artifacts';
 import { parseCsv } from './artifacts';
 
@@ -22,12 +23,13 @@ export function passages(file: Attachment): Passage[] {
     if(!header)return [];
     return rows.map((row,i)=>({...base,location:'Row '+(i+2),text:row.map((value,k)=>(header[k]??'Column '+(k+1))+': '+value).join(' | ')}));
   }
-  const pages=file.pages?.length?file.pages:[file.text];
-  return pages.flatMap((body,index)=>{
+  const pages = file.pages?.length ? documentPages(file) : [{page: 0, text: file.text, reviewed: false, eligible: false}];
+  return pages.flatMap(({page, text: body, reviewed, eligible})=>{
+    if (eligible && !reviewed) return [];
     const out:Passage[]=[];
     const pieces=body.split(/(?<=[.!?])\s+|\n+/).map(x=>x.trim()).filter(Boolean);
     let acc='',sequence=0;
-    const flush=()=>{if(!acc)return; sequence++;out.push({...base,location:file.pages?'Page '+(index+1):'Passage '+sequence,...(file.pages?{page:index+1}:{}),text:acc});acc=''};
+    const flush=()=>{if(!acc)return; sequence++;out.push({...base,location:page?'Page '+page+(reviewed?' · reviewed transcription':''):'Passage '+sequence,...(page?{page}:{}),text:acc});acc=''};
     for (const piece of pieces) {
       for(let start=0;start<piece.length;start+=430) {
         const block=piece.slice(start,start+430);
@@ -89,13 +91,17 @@ function pageCoverage(file: Attachment): string[] {
   const notes: string[] = [];
   if (file.truncated) notes.push(file.name + ' was only partially indexed.');
   if (!file.pages?.length) return notes;
-  const unreadable = file.pages.flatMap((page, i) => page.trim() ? [] : [i + 1]);
+  const indexed = documentPages(file);
+  const unreadable = indexed.filter(p => p.eligible && !p.reviewed).map(p => p.page);
   if (unreadable.length) {
     const pages = unreadable.slice(0, 12).join(', ');
     const more = unreadable.length > 12 ? ' and ' + (unreadable.length - 12) + ' more' : '';
-    notes.push(file.name + ' has no readable text on PDF pages ' + pages + more + '. If these pages are scans, run OCR and upload a searchable copy.');
+    notes.push(file.name + ' has no readable text on PDF pages ' + pages + more + '. Open the scan review to read them with on-device OCR or enter their text.');
   }
-  const folios = file.pages.flatMap((page, index) => {
+  const folios = indexed.flatMap(({native, text, reviewed}, index) => {
+    // A checked transcription must not hide a printed folio still present in the original PDF.
+    const nativeFolio = /^\s*page\s+\d{1,4}\s+of\s+\d{1,4}\s*$/im.test(native);
+    const page = reviewed && !nativeFolio ? text : native;
     const matches = [...page.matchAll(/^\s*page\s+(\d{1,4})\s+of\s+(\d{1,4})\s*$/gim)];
     return matches.length === 1
       ? [{ index, printed: Number(matches[0][1]), total: Number(matches[0][2]) }]
@@ -113,9 +119,10 @@ function assessment(files: Attachment[], termsByFile: DeliveryTerm[][], coverage
   const terms = termsByFile.map(terms => [...new Map(terms.map(term => [key(term), term])).values()]);
   const conflicts = terms.flatMap((terms, i) => terms.length > 1 ? [{ file: files[i], terms }] : []);
   const missing = files.filter((_, i) => !terms[i].length);
-  const conditional = terms.flat().find(term => /\b(?:estimated?|indicative|target|approximately|subject to|provided that|unless|if|earliest|at least|not|no commitment|may|could|assum(?:e|es|ing)|dependent on)\b/i.test(term.quote));
+  const conditional = termsByFile.flat().find(term => /\b(?:estimated?|indicative|target|approximately|subject to|provided that|unless|if|earliest|at least|not|no commitment|may|could|assum(?:e|es|ing)|dependent on)\b/i.test(term.quote));
   const review = [...coverage];
   const proof = terms.flatMap(entries => entries.slice(0, 2));
+  if (conditional && !proof.some(t => t.passage === conditional.passage && t.quote === conditional.quote)) proof.push(conditional);
   if (conflicts.length) review.push(...conflicts.map(({file}) => file.name + ' lists different delivery terms. Confirm which clause governs.'));
   if (missing.length) review.push('No comparable delivery commitment found in ' + missing.map(f => f.name).join(', ') + '.');
   if (conditional) review.push('At least one quoted delivery term is an estimate, condition, or qualification. Confirm the binding commitment.');
